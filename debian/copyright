@@ -1,0 +1,9 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: cosmic-commander
+Upstream-Contact: Alexander Schwarzkopf <progs@fangornsrealm.eu>
+Source: https://github.com/fangornsrealm/cosmic-commander
+Files: *
+Copyright: System76 <info@system76.com>
+License: GPL-3.0
+
+Copyright modifications: Alexander Schwarzkopf <progs@fangornsrealm.eu>
