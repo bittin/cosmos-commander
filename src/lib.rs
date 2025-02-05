@@ -89,7 +89,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (config_handler, config) = Config::load();
 
-    let mut daemonize = true;
+    let mut daemonize = false;
     let mut locations = Vec::new();
     for arg in env::args().skip(1) {
         let location = if &arg == "--no-daemon" {

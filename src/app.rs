@@ -103,6 +103,15 @@ pub enum Action {
     #[cfg(feature = "desktop")]
     ExecEntryAction(usize),
     ExtractHere,
+    F2Rename,
+    F3View,
+    F4Edit,
+    F5Copy,
+    F6Move,
+    F7Mkdir,
+    F8Delete,
+    F9Terminal,
+    F10Quit,
     Gallery,
     HistoryNext,
     HistoryPrevious,
@@ -169,6 +178,15 @@ impl Action {
             Action::ExecEntryAction(action) => {
                 Message::TabMessage(entity_opt, tab::Message::ExecEntryAction(None, *action))
             }
+            Action::F2Rename => Message::F2Rename,
+            Action::F3View => Message::F3View,
+            Action::F4Edit => Message::F4Edit,
+            Action::F5Copy => Message::F5Copy,
+            Action::F6Move => Message::F6Move,
+            Action::F7Mkdir => Message::F7Mkdir,
+            Action::F8Delete => Message::F8Delete,
+            Action::F9Terminal => Message::F9Terminal,
+            Action::F10Quit => Message::F10Quit,
             Action::Gallery => Message::TabMessage(entity_opt, tab::Message::GalleryToggle),
             Action::HistoryNext => Message::TabMessage(entity_opt, tab::Message::GoNext),
             Action::HistoryPrevious => Message::TabMessage(entity_opt, tab::Message::GoPrevious),
@@ -285,6 +303,15 @@ pub enum Message {
     DialogUpdate(DialogPage),
     DialogUpdateComplete(DialogPage),
     ExtractHere(Option<Entity>),
+    F2Rename,
+    F3View,
+    F4Edit,
+    F5Copy,
+    F6Move,
+    F7Mkdir,
+    F8Delete,
+    F9Terminal,
+    F10Quit,
     Key(Modifiers, Key),
     LaunchUrl(String),
     MaybeExit,
@@ -509,6 +536,7 @@ pub struct App {
     tab_model1: segmented_button::Model<segmented_button::SingleSelect>,
     tab_model2: segmented_button::Model<segmented_button::SingleSelect>,
     active_panel: u32,
+    //terminal: Terminal,
     show_button_row: bool,
     show_embedded_terminal: bool,
     show_second_panel: bool,
@@ -758,7 +786,13 @@ impl App {
         activate: bool,
         selection_paths: Option<Vec<PathBuf>>,
     ) -> (Entity, Task<Message>) {
-        let mut tab = Tab::new(location.clone(), self.config.tab);
+        let tabconfig;
+        if self.active_panel == 1 {
+            tabconfig = self.config.tab_left;
+        } else {
+            tabconfig = self.config.tab_right;
+        }
+        let mut tab = Tab::new(location.clone(), tabconfig);
         tab.mode = match self.mode {
             Mode::App => tab::Mode::App,
             Mode::Desktop => {
@@ -804,7 +838,30 @@ impl App {
         activate: bool,
         selection_paths: Option<Vec<PathBuf>>,
     ) -> Task<Message> {
+        self.activate_left_pane();
         self.open_tab_entity(location, activate, selection_paths).1
+    }
+
+    fn open_tab_right(
+        &mut self,
+        location: Location,
+        activate: bool,
+        selection_paths: Option<Vec<PathBuf>>,
+    ) -> Task<Message> {
+        self.activate_right_pane();
+        self.open_tab_entity(location, activate, selection_paths).1
+    }
+
+    fn activate_left_pane(
+        &mut self
+    ) {
+        self.active_panel = 1;
+    }
+
+    fn activate_right_pane(
+        &mut self
+    ) {
+        self.active_panel = 2;
     }
 
     fn operation(&mut self, operation: Operation) {
@@ -886,7 +943,12 @@ impl App {
         selection_paths: Option<Vec<PathBuf>>,
     ) -> Task<Message> {
         log::info!("rescan_tab {entity:?} {location:?} {selection_paths:?}");
-        let icon_sizes = self.config.tab.icon_sizes;
+        let icon_sizes;
+        if self.active_panel == 1 {
+            icon_sizes = self.config.tab_left.icon_sizes;
+        } else {
+            icon_sizes = self.config.tab_right.icon_sizes;
+        }
         Task::perform(
             async move {
                 let location2 = location.clone();
@@ -1073,16 +1135,32 @@ impl App {
             },
         };
         // Update main conf and each tab with the new config
-        let commands: Vec<_> = std::iter::once(cosmic::app::command::set_theme(
-            self.config.app_theme.theme(),
-        ))
-        .chain(tabs.into_iter().map(|entity| {
-            self.update(Message::TabMessage(
-                Some(entity),
-                tab::Message::Config(self.config.tab),
+        let commands: Vec<_>;
+        if self.active_panel == 1 {
+            commands = std::iter::once(cosmic::app::command::set_theme(
+                self.config.app_theme.theme(),
             ))
-        }))
-        .collect();
+            .chain(tabs.into_iter().map(|entity| {
+                self.update(Message::TabMessage(
+                    Some(entity),
+                    tab::Message::Config(self.config.tab_left),
+                ))
+            }))
+            .collect();
+           
+        } else {
+            commands = std::iter::once(cosmic::app::command::set_theme(
+                self.config.app_theme.theme(),
+            ))
+            .chain(tabs.into_iter().map(|entity| {
+                self.update(Message::TabMessage(
+                    Some(entity),
+                    tab::Message::Config(self.config.tab_right),
+                ))
+            }))
+            .collect();
+            
+        }
         Task::batch(commands)
     }
 
@@ -1808,7 +1886,7 @@ impl Application for App {
 
         let mut commands = vec![app.update_config()];
 
-        for location in flags.locations {
+        for location in flags.locations.clone() {
             if let Some(path) = location.path_opt() {
                 if path.is_file() {
                     if let Some(parent) = path.parent() {
@@ -1823,22 +1901,25 @@ impl Application for App {
             }
             commands.push(app.open_tab(location, true, None));
         }
-
-        if app.active_panel == 1 {
-            if app.tab_model1.iter().next().is_none() {
-                if let Ok(current_dir) = env::current_dir() {
-                    commands.push(app.open_tab(Location::Path(current_dir), true, None));
-                } else {
-                    commands.push(app.open_tab(Location::Path(home_dir()), true, None));
-                }
+        // restore previously opened tabs
+        for i in 0..app.config.paths_left.len() {
+            commands.push(app.open_tab(Location::Path(PathBuf::from(&app.config.paths_left[i])), true, None));
+        }
+        for i in 0..app.config.paths_right.len() {
+            commands.push(app.open_tab_right(Location::Path(PathBuf::from(&app.config.paths_right[i])), true, None));
+        }
+        if app.config.paths_left.len() == 0 && flags.locations.len() == 0 {
+            if let Ok(current_dir) = env::current_dir() {
+                commands.push(app.open_tab(Location::Path(current_dir), true, None));
+            } else {
+                commands.push(app.open_tab(Location::Path(home_dir()), true, None));
             }
-        } else {
-            if app.tab_model2.iter().next().is_none() {
-                if let Ok(current_dir) = env::current_dir() {
-                    commands.push(app.open_tab(Location::Path(current_dir), true, None));
-                } else {
-                    commands.push(app.open_tab(Location::Path(home_dir()), true, None));
-                }
+        }
+        if app.config.paths_right.len() == 0 {
+            if let Ok(current_dir) = env::current_dir() {
+                commands.push(app.open_tab_right(Location::Path(current_dir), true, None));
+            } else {
+                commands.push(app.open_tab_right(Location::Path(home_dir()), true, None));
             }
         }
 
@@ -2324,6 +2405,128 @@ impl Application for App {
                         to: destination,
                     });
                 }
+            }
+            Message::F2Rename => {
+                let entity;
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                } else {
+                    entity = self.tab_model2.active();
+                }
+                self.update(Message::Rename(Some(entity)));
+            }
+            Message::F3View => {
+                let entity;
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                } else {
+                    entity = self.tab_model2.active();
+                }
+                self.update(Message::Preview(Some(entity)));
+            }
+            Message::F4Edit => {
+                let entity;
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                } else {
+                    entity = self.tab_model2.active();
+                }
+                self.update(Message::OpenWithDialog(Some(entity)));
+            }
+            Message::F5Copy => {
+                let entity;
+                let to;
+                // get the selected paths of the active panel
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                } else {
+                    entity = self.tab_model2.active();
+                }
+                let paths = self.selected_paths(Some(entity));
+                // the the path of the other panel
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model2.data_mut::<Tab>(self.tab_model2.active()),
+                    2 => self.tab_model1.data_mut::<Tab>(self.tab_model1.active()),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
+                    if let Some(path) = tab.location.path_opt() {
+                        to = path.to_owned();
+                    } else {
+                        return Task::none();
+                    }
+                } else {
+                    return Task::none();
+                }
+                
+                self.operation(Operation::Copy {
+                    paths,
+                    to,
+                });
+            }
+            Message::F6Move => {
+                let entity;
+                let to;
+                // get the selected paths of the active panel
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                } else {
+                    entity = self.tab_model2.active();
+                }
+                let paths = self.selected_paths(Some(entity));
+                // the the path of the other panel
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model2.data_mut::<Tab>(self.tab_model2.active()),
+                    2 => self.tab_model1.data_mut::<Tab>(self.tab_model1.active()),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
+                    if let Some(path) = tab.location.path_opt() {
+                        to = path.to_owned();
+                    } else {
+                        return Task::none();
+                    }
+                } else {
+                    return Task::none();
+                }
+                self.operation(Operation::Move {
+                    paths,
+                    to,
+                });
+            }
+            Message::F7Mkdir => {
+                let entity;
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                } else {
+                    entity = self.tab_model2.active();
+                }
+                return self.update(Message::NewItem(Some(entity), true));
+            }
+            Message::F8Delete => {
+                let entity;
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                } else {
+                    entity = self.tab_model2.active();
+                }
+                return self.update(Message::MoveToTrash(Some(entity)));
+            }
+            Message::F9Terminal => {
+                let entity;
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                } else {
+                    entity = self.tab_model2.active();
+                }
+                return self.update(Message::OpenTerminal(Some(entity)));
+            }
+            Message::F10Quit => {
+                return self.update(Message::WindowClose);
             }
             Message::Key(modifiers, key) => {
                 let entity;
@@ -3294,13 +3497,22 @@ impl Application for App {
                 return Task::batch([self.update_title(), self.update_watcher()]);
             }
             Message::TabConfig(config) => {
-                if config != self.config.tab {
-                    config_set!(tab, config);
-                    return self.update_config();
+                if self.active_panel == 1 {
+                    if config != self.config.tab_left {
+                        config_set!(tab_left, config);
+                        return self.update_config();
+                    }
+                } else {
+                    if config != self.config.tab_right {
+                        config_set!(tab_right, config);
+                        return self.update_config();
+                    }
                 }
             }
             Message::ToggleFoldersFirst => {
-                let mut config = self.config.tab;
+                let mut config = self.config.tab_left;
+                config.folders_first = !config.folders_first;
+                let mut config = self.config.tab_right;
                 config.folders_first = !config.folders_first;
                 return self.update(Message::TabConfig(config));
             }
@@ -3501,9 +3713,14 @@ impl Application for App {
                 } {
                     tab.config.view = view;
                 }
-                let mut config = self.config.tab;
-                config.view = view;
-                return self.update(Message::TabConfig(config));
+                if self.active_panel == 1 {
+                    let mut config = self.config.tab_left;
+                    config.view = view;
+                } else {
+                    let mut config = self.config.tab_right;
+                    config.view = view;
+                }
+                return self.update(Message::TabActivate(entity));
             }
             Message::ToggleContextPage(context_page) => {
                 //TODO: ensure context menus are closed
@@ -3527,7 +3744,12 @@ impl Application for App {
                 self.toasts.remove(id);
 
                 let mut paths = Vec::with_capacity(recently_trashed.len());
-                let icon_sizes = self.config.tab.icon_sizes;
+                let icon_sizes;
+                if self.active_panel == 1 {
+                    icon_sizes = self.config.tab_left.icon_sizes;
+                } else {
+                    icon_sizes = self.config.tab_right.icon_sizes;
+                }
 
                 return cosmic::task::future(async move {
                     match tokio::task::spawn_blocking(move || Location::Trash.scan(icon_sizes))
@@ -3607,7 +3829,12 @@ impl Application for App {
                         }
                     }
                 };
-                let mut config = self.config.tab;
+                let mut config;
+                if self.active_panel == 1 {
+                   config = self.config.tab_left;
+                } else {
+                    config = self.config.tab_right;
+                }
                 if let Some(tab) = match self.active_panel {
                     1 => self.tab_model1.data_mut::<Tab>(entity),
                     2 => self.tab_model2.data_mut::<Tab>(entity),
@@ -3621,7 +3848,7 @@ impl Application for App {
                         tab::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
                     }
                 }
-                return self.update(Message::TabConfig(config));
+                return self.update(Message::TabActivate(entity));
             }
             Message::ZoomIn(entity_opt) => {
                 let entity = match entity_opt {
@@ -3648,7 +3875,12 @@ impl Application for App {
                         *size = step.try_into().unwrap();
                     }
                 };
-                let mut config = self.config.tab;
+                let mut config;
+                if self.active_panel == 1 {
+                   config = self.config.tab_left;
+                } else {
+                    config = self.config.tab_right;
+                }
                 if let Some(tab) = match self.active_panel {
                     1 => self.tab_model1.data_mut::<Tab>(entity),
                     2 => self.tab_model2.data_mut::<Tab>(entity),
@@ -3662,7 +3894,7 @@ impl Application for App {
                         tab::View::Grid => zoom_in(&mut config.icon_sizes.grid, 50, 500),
                     }
                 }
-                return self.update(Message::TabConfig(config));
+                return self.update(Message::TabActivate(entity));
             }
             Message::ZoomOut(entity_opt) => {
                 let entity = match entity_opt {
@@ -3689,7 +3921,12 @@ impl Application for App {
                         *size = step.try_into().unwrap();
                     }
                 };
-                let mut config = self.config.tab;
+                let mut config;
+                if self.active_panel == 1 {
+                   config = self.config.tab_left;
+                } else {
+                    config = self.config.tab_right;
+                }
                 if let Some(tab) = match self.active_panel {
                     1 => self.tab_model1.data_mut::<Tab>(entity),
                     2 => self.tab_model2.data_mut::<Tab>(entity),
@@ -3703,7 +3940,7 @@ impl Application for App {
                         tab::View::Grid => zoom_out(&mut config.icon_sizes.grid, 50, 500),
                     }
                 }
-                return self.update(Message::TabConfig(config));
+                return self.update(Message::TabActivate(entity));
             }
             Message::DndEnterNav(entity) => {
                 if let Some(location) = self.nav_model.data::<Location>(entity) {
@@ -3835,8 +4072,8 @@ impl Application for App {
                     .is_some_and(|(e, i)| *e == entity && i.elapsed() >= HOVER_DURATION)
                 {
                     self.tab_dnd_hover = None;
-                    return self.update(Message::TabActivate(entity));
                 }
+                return self.update(Message::TabActivate(entity));
             }
 
             Message::NavBarClose(entity) => {
@@ -4951,8 +5188,8 @@ impl Application for App {
                 )
             }
         }
-        if self.active_panel == 1 {
-            if self.tab_model1.iter().count() > 1 {
+        //if self.tab_model1.iter().count() > 1 && self.tab_model2.iter().count() > 1 {
+            if !self.show_second_panel {
                 tab_column = tab_column.push(
                     widget::container(
                         widget::tab_bar::horizontal(&self.tab_model1)
@@ -4971,59 +5208,113 @@ impl Application for App {
                     .width(Length::Fill)
                     .padding([0, space_s]),
                 );
-            }
-        } else {
-            if self.tab_model2.iter().count() > 1 {
+            } else {
                 tab_column = tab_column.push(
-                    widget::container(
-                        widget::tab_bar::horizontal(&self.tab_model2)
-                            .button_height(32)
-                            .button_spacing(space_xxs)
-                            .on_activate(Message::TabActivate)
-                            .on_close(|entity| Message::TabClose(Some(entity)))
-                            .on_dnd_enter(|entity, _| Message::DndEnterTab(entity))
-                            .on_dnd_leave(|_| Message::DndExitTab)
-                            .on_dnd_drop(|entity, data, action| {
-                                Message::DndDropTab(entity, data, action)
-                            })
-                            .drag_id(self.tab_drag_id),
-                    )
-                    .class(style::Container::Background)
-                    .width(Length::Fill)
-                    .padding([0, space_s]),
-                );
+                    widget::row::with_children(vec![
+                        widget::container(
+                            widget::tab_bar::horizontal(&self.tab_model1)
+                                .button_height(32)
+                                .button_spacing(space_xxs)
+                                .on_activate(Message::TabActivate)
+                                .on_close(|entity| Message::TabClose(Some(entity)))
+                                .on_dnd_enter(|entity, _| Message::DndEnterTab(entity))
+                                .on_dnd_leave(|_| Message::DndExitTab)
+                                .on_dnd_drop(|entity, data, action| {
+                                    Message::DndDropTab(entity, data, action)
+                                })
+                                .drag_id(self.tab_drag_id),
+                        )
+                        .class(style::Container::Background)
+                        .padding([0, space_s])
+                        .into(),
+                        widget::container(
+                            widget::tab_bar::horizontal(&self.tab_model2)
+                                .button_height(32)
+                                .button_spacing(space_xxs)
+                                .on_activate(Message::TabActivate)
+                                .on_close(|entity| Message::TabClose(Some(entity)))
+                                .on_dnd_enter(|entity, _| Message::DndEnterTab(entity))
+                                .on_dnd_leave(|_| Message::DndExitTab)
+                                .on_dnd_drop(|entity, data, action| {
+                                    Message::DndDropTab(entity, data, action)
+                                })
+                                .drag_id(self.tab_drag_id),
+                        )
+                        .class(style::Container::Background)
+                        .padding([0, space_s])
+                        .into(),
+                    ])
+                )
             }
-        }
-
-        let entity;
-        if self.active_panel == 1 {
-            entity = self.tab_model1.active();
-        } else {
-            entity = self.tab_model2.active();
-        }
-        match { 
-            match self.active_panel {
-            1 => self.tab_model1.data::<Tab>(entity),
-            2 => self.tab_model2.data::<Tab>(entity),
-            _ => {
-                log::error!("unknown panel used!");
-                None
-            },
-        } } {
-            Some(tab) => {
-                let tab_view = tab
-                    .view(&self.key_binds)
-                    .map(move |message| Message::TabMessage(Some(entity), message));
-                tab_column = tab_column.push(tab_view);
+            if !self.show_second_panel {
+                let entity = self.tab_model1.active();
+                if let Some(tab) = self.tab_model1.data::<Tab>(entity) {
+                    let tab_view = tab
+                        .view(&self.key_binds)
+                        .map(move |message| Message::TabMessage(Some(entity), message));
+                    tab_column = tab_column.push(tab_view);
+                }
+            } else {
+                let entity_left = self.tab_model1.active();
+                let entity_right = self.tab_model2.active();
+                let tab_view_left;
+                let tab_view_right;
+                if let Some(tab) = self.tab_model1.data::<Tab>(entity_left) {
+                    tab_view_left = tab
+                        .view(&self.key_binds)
+                        .map(move |message| Message::TabMessage(Some(entity_left), message));
+                    if let Some(tab) = self.tab_model2.data::<Tab>(entity_right) {
+                        tab_view_right = tab
+                            .view(&self.key_binds)
+                            .map(move |message| Message::TabMessage(Some(entity_left), message));
+                        tab_column = tab_column.push(widget::row::with_children(vec![
+                            tab_view_left,
+                            tab_view_right
+                        ]).width(Length::Fill),
+                        );                    
+                    } else {
+                        let entity = self.tab_model1.active();
+                        if let Some(tab) = self.tab_model1.data::<Tab>(entity) {
+                            let tab_view = tab
+                                .view(&self.key_binds)
+                                .map(move |message| Message::TabMessage(Some(entity), message));
+                            tab_column = tab_column.push(tab_view);
+                        }
+                    }            
+                }
             }
-            None => {
-                //TODO
-            }
-        }
-
+        //}
         // The toaster is added on top of an empty element to ensure that it does not override context menus
         tab_column = tab_column.push(widget::toaster(&self.toasts, widget::horizontal_space()));
 
+        if self.show_embedded_terminal {
+            /*
+            let mut terminal_box = terminal_box(self.terminal)
+            .id(terminal_id)
+            .on_context_menu(move |position_opt| {
+                Message::TabContextMenu(pane, position_opt)
+            })
+            .on_middle_click(move || Message::MiddleClick(pane, Some(entity_middle_click)))
+            .opacity(self.config.opacity_ratio())
+            .padding(space_xxs)
+            .show_headerbar(self.config.show_headerbar);
+            */
+        }
+        if self.show_button_row {
+            tab_column = tab_column.push(
+                widget::row::with_children(vec![
+                    widget::button::text(fl!("f2-rename")).on_press(Message::F2Rename).into(),
+                    widget::button::text(fl!("f3-view")).on_press(Message::F3View).into(),
+                    widget::button::text(fl!("f4-edit")).on_press(Message::F4Edit).into(),
+                    widget::button::text(fl!("f5-copy")).on_press(Message::F5Copy).into(),
+                    widget::button::text(fl!("f6-move")).on_press(Message::F6Move).into(),
+                    widget::button::text(fl!("f7-mkdir")).on_press(Message::F7Mkdir).into(),
+                    widget::button::text(fl!("f7-mkdir")).on_press(Message::F8Delete).into(),
+                    widget::button::text(fl!("f9-Term")).on_press(Message::F9Terminal).into(),
+                    widget::button::text(fl!("f10-quit")).on_press(Message::F10Quit).into(),
+                ]).width(Length::Fill)
+            )
+        }
         let content: Element<_> = tab_column.into();
 
         // Uncomment to debug layout:

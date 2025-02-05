@@ -265,13 +265,22 @@ view = View
 show-button-row = Show Button Row
 show-embedded-terminal = Show embedded Terminal
 show-second-panel = Show second Filemanager panel
+f2-rename = F2 Rename
+f3-view = F3 View
+f4-edit = F4 Edit
+f5-copy = F5 Copy
+f6-move = F6 Move
+f7-mkdir = F7 mkdir
+f8-delete = F8 Delete
+f9-Term = F9 Terminal
+f10-quit = F10 Quit
 grid-view = Grid view
 list-view = List view
 show-hidden-files = Show hidden files
 list-directories-first = List directories first
 gallery-preview = Gallery preview
 menu-settings = Settings...
-menu-about = About COSMIC Files...
+menu-about = About Cosmic Commander...
 
 ## Sort
 sort = Sort

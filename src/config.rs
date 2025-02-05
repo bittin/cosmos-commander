@@ -99,7 +99,10 @@ pub struct Config {
     pub show_button_row: bool,
     pub show_embedded_terminal: bool,
     pub show_second_panel: bool,
-    pub tab: TabConfig,
+    pub tab_left: TabConfig,
+    pub tab_right: TabConfig,
+    pub paths_left: Vec<String>,
+    pub paths_right: Vec<String>,
 }
 
 impl Config {
@@ -149,7 +152,10 @@ impl Default for Config {
             show_button_row: true,
             show_embedded_terminal: true,
             show_second_panel: true,
-            tab: TabConfig::default(),
+            tab_left: TabConfig::default(),
+            tab_right: TabConfig::default(),
+            paths_left: Vec::new(),
+            paths_right: Vec::new(),
         }
     }
 }
