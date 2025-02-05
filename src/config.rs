@@ -96,6 +96,9 @@ pub struct Config {
     pub desktop: DesktopConfig,
     pub favorites: Vec<Favorite>,
     pub show_details: bool,
+    pub show_button_row: bool,
+    pub show_embedded_terminal: bool,
+    pub show_second_panel: bool,
     pub tab: TabConfig,
 }
 
@@ -143,6 +146,9 @@ impl Default for Config {
                 Favorite::Videos,
             ],
             show_details: false,
+            show_button_row: true,
+            show_embedded_terminal: true,
+            show_second_panel: true,
             tab: TabConfig::default(),
         }
     }

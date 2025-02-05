@@ -331,6 +331,9 @@ pub enum Message {
     SearchClear,
     SearchInput(String),
     SetShowDetails(bool),
+    ShowButtonRow(bool),
+    ShowEmbeddedTerminal(bool),
+    ShowSecondPanel(bool),
     SystemThemeModeChange(cosmic_theme::ThemeMode),
     Size(Size),
     TabActivate(Entity),
@@ -506,6 +509,9 @@ pub struct App {
     tab_model1: segmented_button::Model<segmented_button::SingleSelect>,
     tab_model2: segmented_button::Model<segmented_button::SingleSelect>,
     active_panel: u32,
+    show_button_row: bool,
+    show_embedded_terminal: bool,
+    show_second_panel: bool,
     config_handler: Option<cosmic_config::Config>,
     config: Config,
     mode: Mode,
@@ -1662,7 +1668,8 @@ impl App {
 
     fn settings(&self) -> Element<Message> {
         // TODO: Should dialog be updated here too?
-        widget::column::with_children(vec![widget::settings::section()
+        widget::column::with_children(vec![
+            widget::settings::section()
             .title(fl!("appearance"))
             .add({
                 let app_theme_selected = match self.config.app_theme {
@@ -1681,8 +1688,23 @@ impl App {
                         })
                     },
                 ))
-            })
-            .into()])
+            }).into(),
+            widget::settings::section()
+                .title(fl!("view"))
+                .add(
+                    widget::settings::item::builder(fl!("show-button-row"))
+                        .toggler(self.show_button_row, Message::ShowButtonRow),
+                )
+                .add(
+                    widget::settings::item::builder(fl!("show-embedded-terminal"))
+                        .toggler(self.show_embedded_terminal, Message::ShowEmbeddedTerminal),
+                )
+                .add(
+                    widget::settings::item::builder(fl!("show-second-panel"))
+                        .toggler(self.show_second_panel, Message::ShowSecondPanel),
+                )
+                .into(),
+        ])
         .into()
     }
 }
@@ -1743,6 +1765,9 @@ impl Application for App {
             tab_model1: segmented_button::ModelBuilder::default().build(),
             tab_model2: segmented_button::ModelBuilder::default().build(),
             active_panel: 1,
+            show_button_row: true,
+            show_embedded_terminal: true,
+            show_second_panel: true,
             config_handler: flags.config_handler,
             config: flags.config,
             mode: flags.mode,
@@ -3096,6 +3121,21 @@ impl Application for App {
             }
             Message::SetShowDetails(show_details) => {
                 config_set!(show_details, show_details);
+                return self.update_config();
+            }
+            Message::ShowButtonRow(show) => {
+                self.show_button_row = show;
+                config_set!(show_button_row, self.show_button_row);
+                return self.update_config();
+            }
+            Message::ShowEmbeddedTerminal(show) => {
+                self.show_embedded_terminal = show;
+                config_set!(show_embedded_terminal, self.show_embedded_terminal);
+                return self.update_config();
+            }
+            Message::ShowSecondPanel(show) => {
+                self.show_second_panel = show;
+                config_set!(show_second_panel, self.show_second_panel);
                 return self.update_config();
             }
             Message::SystemThemeModeChange(_theme_mode) => {
