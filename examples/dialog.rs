@@ -4,7 +4,7 @@ use cosmic::{
     iced::{window, Subscription},
     widget, Application, Element,
 };
-use cosmic_files::dialog::{Dialog, DialogKind, DialogMessage, DialogResult};
+use cosmic_commander::dialog::{Dialog, DialogKind, DialogMessage, DialogResult};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();

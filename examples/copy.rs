@@ -1,4 +1,4 @@
-use cosmic_files::operation::{recursive::Context, Controller, ReplaceResult};
+use cosmic_commander::operation::{recursive::Context, Controller, ReplaceResult};
 use std::{error::Error, io, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn Error>> {
