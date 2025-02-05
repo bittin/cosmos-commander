@@ -25,6 +25,19 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
 
     // Common keys
     bind!([], Key::Named(Named::Space), Gallery);
+    bind!([], Key::Named(Named::Tab), SwapPanels);
+    bind!([], Key::Named(Named::F2), F2Rename);
+    bind!([], Key::Named(Named::F3), F3View);
+    bind!([], Key::Named(Named::F4), F4Edit);
+    bind!([], Key::Named(Named::F5), F5Copy);
+    bind!([], Key::Named(Named::F6), F6Move);
+    bind!([], Key::Named(Named::F7), F7Mkdir);
+    bind!([], Key::Named(Named::F8), F8Delete);
+    bind!([], Key::Named(Named::F9), F9Terminal);
+    bind!([], Key::Named(Named::F10), F10Quit);
+    bind!([], Key::Named(Named::Space), Gallery);
+    bind!([], Key::Named(Named::Space), Gallery);
+
     bind!([], Key::Named(Named::ArrowDown), ItemDown);
     bind!([], Key::Named(Named::ArrowLeft), ItemLeft);
     bind!([], Key::Named(Named::ArrowRight), ItemRight);
@@ -58,6 +71,7 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
         bind!([Ctrl, Shift], Key::Named(Named::Tab), TabPrev);
         bind!([Ctrl], Key::Character("q".into()), WindowClose);
         bind!([Ctrl], Key::Character("n".into()), WindowNew);
+        //bind!([Ctrl], Key::Character("r".into()), TabReload);
     }
 
     // App and desktop only keys

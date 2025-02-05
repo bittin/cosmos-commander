@@ -139,6 +139,7 @@ pub enum Action {
     SelectAll,
     SetSort(HeadingOptions, bool),
     Settings,
+    SwapPanels,
     TabClose,
     TabNew,
     TabNext,
@@ -216,6 +217,7 @@ impl Action {
                 Message::TabMessage(entity_opt, tab::Message::SetSort(*sort, *dir))
             }
             Action::Settings => Message::ToggleContextPage(ContextPage::Settings),
+            Action::SwapPanels => Message::SwapPanels,
             Action::TabClose => Message::TabClose(entity_opt),
             Action::TabNew => Message::TabNew,
             Action::TabNext => Message::TabNext,
@@ -363,10 +365,16 @@ pub enum Message {
     ShowSecondPanel(bool),
     SystemThemeModeChange(cosmic_theme::ThemeMode),
     Size(Size),
+    StoreOpenPaths,
+    SwapPanels,
     TabActivate(Entity),
+    TabActivateLeft(Entity),
+    TabActivateRight(Entity),
     TabNext,
     TabPrev,
     TabClose(Option<Entity>),
+    TabCloseLeft(Option<Entity>),
+    TabCloseRight(Option<Entity>),
     TabConfig(TabConfig),
     TabMessage(Option<Entity>, tab::Message),
     TabNew,
@@ -395,8 +403,14 @@ pub enum Message {
     DndEnterNav(Entity),
     DndExitNav,
     DndEnterTab(Entity),
+    DndEnterTabLeft(Entity),
+    DndEnterTabRight(Entity),
     DndExitTab,
+    DndExitTabLeft,
+    DndExitTabRight,
     DndDropTab(Entity, Option<ClipboardPaste>, DndAction),
+    DndDropTabLeft(Entity, Option<ClipboardPaste>, DndAction),
+    DndDropTabRight(Entity, Option<ClipboardPaste>, DndAction),
     DndDropNav(Entity, Option<ClipboardPaste>, DndAction),
     Recents,
     #[cfg(feature = "wayland")]
@@ -528,6 +542,15 @@ impl PartialEq for WatcherWrapper {
     }
 }
 
+fn osstr_to_string(osstr: std::ffi::OsString) -> String {
+    match osstr.to_str() {
+        Some(str) => return str.to_string(),
+        None => {}
+    }
+    String::new()
+}
+
+
 /// The [`App`] stores application-specific state.
 pub struct App {
     core: Core,
@@ -573,9 +596,11 @@ pub struct App {
     window_id_opt: Option<window::Id>,
     windows: HashMap<window::Id, WindowKind>,
     nav_dnd_hover: Option<(Location, Instant)>,
-    tab_dnd_hover: Option<(Entity, Instant)>,
+    tab_dnd_hover_left: Option<(Entity, Instant)>,
+    tab_dnd_hover_right: Option<(Entity, Instant)>,
     nav_drag_id: DragId,
-    tab_drag_id: DragId,
+    tab_drag_id_left: DragId,
+    tab_drag_id_right: DragId,
 }
 
 impl App {
@@ -1879,9 +1904,11 @@ impl Application for App {
             window_id_opt,
             windows: HashMap::new(),
             nav_dnd_hover: None,
-            tab_dnd_hover: None,
+            tab_dnd_hover_left: None,
+            tab_dnd_hover_right: None,
             nav_drag_id: DragId::new(),
-            tab_drag_id: DragId::new(),
+            tab_drag_id_left: DragId::new(),
+            tab_drag_id_right: DragId::new(),
         };
 
         let mut commands = vec![app.update_config()];
@@ -3341,8 +3368,36 @@ impl Application for App {
                 config_set!(show_second_panel, self.show_second_panel);
                 return self.update_config();
             }
+            Message::StoreOpenPaths => {
+                let mut left = Vec::new();
+                let mut right = Vec::new();
+                for entity in self.tab_model1.iter() {
+                    if let Some(tab) = self.tab_model1.data::<Tab>(entity) {
+                        if let Some(path) = tab.location.path_opt() {
+                            left.push(osstr_to_string(path.clone().into_os_string()));
+                        }
+                    }
+                }
+                for entity in self.tab_model2.iter() {
+                    if let Some(tab) = self.tab_model2.data::<Tab>(entity) {
+                        if let Some(path) = tab.location.path_opt() {
+                            right.push(osstr_to_string(path.clone().into_os_string()));
+                        }
+                    }
+                }
+                config_set!(paths_left, left);
+                config_set!(paths_right, right);
+                return self.update_config();
+            }
             Message::SystemThemeModeChange(_theme_mode) => {
                 return self.update_config();
+            }
+            Message::SwapPanels => {
+                if self.active_panel == 1 {
+                    self.active_panel = 2;
+                } else {
+                    self.active_panel = 1;
+                }
             }
             Message::TabActivate(entity) => {
                 if self.active_panel == 1 {
@@ -3357,6 +3412,24 @@ impl Application for App {
                     if let Some(tab) = self.tab_model2.data::<Tab>(entity) {
                         self.activate_nav_model_location(&tab.location.clone());
                     }
+                }
+                return self.update_title();
+            }
+            Message::TabActivateLeft(entity) => {
+                self.active_panel = 1;
+                self.tab_model1.activate(entity);
+
+                if let Some(tab) = self.tab_model1.data::<Tab>(entity) {
+                    self.activate_nav_model_location(&tab.location.clone());
+                }
+                return self.update_title();
+            }
+            Message::TabActivateRight(entity) => {
+                self.active_panel = 2;
+                self.tab_model2.activate(entity);
+
+                if let Some(tab) = self.tab_model2.data::<Tab>(entity) {
+                    self.activate_nav_model_location(&tab.location.clone());
                 }
                 return self.update_title();
             }
@@ -3495,6 +3568,70 @@ impl Application for App {
                 // Activate closest item   
 
                 return Task::batch([self.update_title(), self.update_watcher()]);
+            }
+            Message::TabCloseLeft(entity_opt) => {
+                self.active_panel = 1;
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => self.tab_model1.active()
+                };
+                if let Some(position) = self.tab_model1.position(entity) {
+                    let new_position = if position > 0 {
+                        position - 1
+                    } else {
+                        position + 1
+                    };
+
+                    if self.tab_model1.activate_position(new_position) {
+                        if let Some(new_entity) = self.tab_model1.entity_at(new_position) {
+                            if let Some(tab) = self.tab_model1.data::<Tab>(new_entity) {
+                                self.activate_nav_model_location(&tab.location.clone());
+                            }
+                        }
+                    }
+                }
+
+                // Remove item
+                self.tab_model1.remove(entity);
+
+                // If that was the last tab, close window
+                if self.tab_model1.iter().next().is_none() {
+                    if let Some(window_id) = &self.window_id_opt {
+                        return window::close(*window_id);
+                    }
+                }
+            }
+            Message::TabCloseRight(entity_opt) => {
+                self.active_panel = 2;
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => self.tab_model2.active()
+                };
+                if let Some(position) = self.tab_model2.position(entity) {
+                    let new_position = if position > 0 {
+                        position - 1
+                    } else {
+                        position + 1
+                    };
+
+                    if self.tab_model2.activate_position(new_position) {
+                        if let Some(new_entity) = self.tab_model2.entity_at(new_position) {
+                            if let Some(tab) = self.tab_model2.data::<Tab>(new_entity) {
+                                self.activate_nav_model_location(&tab.location.clone());
+                            }
+                        }
+                    }
+                }
+
+                // Remove item
+                self.tab_model2.remove(entity);
+
+                // If that was the last tab, close window
+                if self.tab_model2.iter().next().is_none() {
+                    if let Some(window_id) = &self.window_id_opt {
+                        return window::close(*window_id);
+                    }
+                }
             }
             Message::TabConfig(config) => {
                 if self.active_panel == 1 {
@@ -4023,13 +4160,39 @@ impl Application for App {
                 }
             }
             Message::DndEnterTab(entity) => {
-                self.tab_dnd_hover = Some((entity, Instant::now()));
+                if self.active_panel == 1 {
+                    self.tab_dnd_hover_left = Some((entity, Instant::now()));
+                    return Task::perform(tokio::time::sleep(HOVER_DURATION), move |_| {
+                        cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
+                    });
+                } else {
+                    self.tab_dnd_hover_right = Some((entity, Instant::now()));
+                    return Task::perform(tokio::time::sleep(HOVER_DURATION), move |_| {
+                        cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
+                    });
+                }
+            }
+            Message::DndEnterTabLeft(entity) => {
+                self.tab_dnd_hover_left = Some((entity, Instant::now()));
+                return Task::perform(tokio::time::sleep(HOVER_DURATION), move |_| {
+                    cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
+                });
+            }
+            Message::DndEnterTabRight(entity) => {
+                self.tab_dnd_hover_right = Some((entity, Instant::now()));
                 return Task::perform(tokio::time::sleep(HOVER_DURATION), move |_| {
                     cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
                 });
             }
             Message::DndExitTab => {
-                self.nav_dnd_hover = None;
+                self.tab_dnd_hover_left = None;
+                self.tab_dnd_hover_right = None;
+            }
+            Message::DndExitTabLeft => {
+                self.tab_dnd_hover_left = None;
+            }
+            Message::DndExitTabRight => {
+                self.tab_dnd_hover_right = None;
             }
             Message::DndDropTab(entity, data, action) => {
                 self.nav_dnd_hover = None;
@@ -4065,13 +4228,79 @@ impl Application for App {
                     return ret;
                 }
             }
+            Message::DndDropTabLeft(entity, data, action) => {
+                self.nav_dnd_hover = None;
+                if let Some((tab, data)) = 
+                        self.tab_model1.data::<Tab>(entity).zip(data) {
+                    let kind = match action {
+                        DndAction::Move => ClipboardKind::Cut,
+                        _ => ClipboardKind::Copy,
+                    };
+                    let ret = match &tab.location {
+                        Location::Path(p) => self.update(Message::PasteContents(
+                            p.clone(),
+                            ClipboardPaste {
+                                kind,
+                                paths: data.paths,
+                            },
+                        )),
+                        Location::Trash if matches!(action, DndAction::Move) => {
+                            self.operation(Operation::Delete { paths: data.paths });
+                            Task::none()
+                        }
+                        _ => {
+                            log::warn!("Copy to trash is not supported.");
+                            Task::none()
+                        }
+                    };
+                    return ret;
+                }
+            }
+            Message::DndDropTabRight(entity, data, action) => {
+                self.nav_dnd_hover = None;
+                if let Some((tab, data)) = 
+                        self.tab_model2.data::<Tab>(entity).zip(data) {
+                    let kind = match action {
+                        DndAction::Move => ClipboardKind::Cut,
+                        _ => ClipboardKind::Copy,
+                    };
+                    let ret = match &tab.location {
+                        Location::Path(p) => self.update(Message::PasteContents(
+                            p.clone(),
+                            ClipboardPaste {
+                                kind,
+                                paths: data.paths,
+                            },
+                        )),
+                        Location::Trash if matches!(action, DndAction::Move) => {
+                            self.operation(Operation::Delete { paths: data.paths });
+                            Task::none()
+                        }
+                        _ => {
+                            log::warn!("Copy to trash is not supported.");
+                            Task::none()
+                        }
+                    };
+                    return ret;
+                }
+            }
             Message::DndHoverTabTimeout(entity) => {
-                if self
-                    .tab_dnd_hover
-                    .as_ref()
-                    .is_some_and(|(e, i)| *e == entity && i.elapsed() >= HOVER_DURATION)
-                {
-                    self.tab_dnd_hover = None;
+                if self.active_panel == 1 {
+                    if self
+                        .tab_dnd_hover_left
+                        .as_ref()
+                        .is_some_and(|(e, i)| *e == entity && i.elapsed() >= HOVER_DURATION)
+                    {
+                        self.tab_dnd_hover_left = None;
+                    }
+                } else {
+                    if self
+                        .tab_dnd_hover_right
+                        .as_ref()
+                        .is_some_and(|(e, i)| *e == entity && i.elapsed() >= HOVER_DURATION)
+                    {
+                        self.tab_dnd_hover_right = None;
+                    }
                 }
                 return self.update(Message::TabActivate(entity));
             }
@@ -5195,14 +5424,14 @@ impl Application for App {
                         widget::tab_bar::horizontal(&self.tab_model1)
                             .button_height(32)
                             .button_spacing(space_xxs)
-                            .on_activate(Message::TabActivate)
-                            .on_close(|entity| Message::TabClose(Some(entity)))
-                            .on_dnd_enter(|entity, _| Message::DndEnterTab(entity))
-                            .on_dnd_leave(|_| Message::DndExitTab)
+                            .on_activate(Message::TabActivateLeft)
+                            .on_close(|entity| Message::TabCloseLeft(Some(entity)))
+                            .on_dnd_enter(|entity, _| Message::DndEnterTabLeft(entity))
+                            .on_dnd_leave(|_| Message::DndExitTabLeft)
                             .on_dnd_drop(|entity, data, action| {
-                                Message::DndDropTab(entity, data, action)
+                                Message::DndDropTabLeft(entity, data, action)
                             })
-                            .drag_id(self.tab_drag_id),
+                            .drag_id(self.tab_drag_id_left),
                     )
                     .class(style::Container::Background)
                     .width(Length::Fill)
@@ -5215,14 +5444,14 @@ impl Application for App {
                             widget::tab_bar::horizontal(&self.tab_model1)
                                 .button_height(32)
                                 .button_spacing(space_xxs)
-                                .on_activate(Message::TabActivate)
-                                .on_close(|entity| Message::TabClose(Some(entity)))
-                                .on_dnd_enter(|entity, _| Message::DndEnterTab(entity))
-                                .on_dnd_leave(|_| Message::DndExitTab)
+                                .on_activate(Message::TabActivateLeft)
+                                .on_close(|entity| Message::TabCloseLeft(Some(entity)))
+                                .on_dnd_enter(|entity, _| Message::DndEnterTabLeft(entity))
+                                .on_dnd_leave(|_| Message::DndExitTabLeft)
                                 .on_dnd_drop(|entity, data, action| {
-                                    Message::DndDropTab(entity, data, action)
+                                    Message::DndDropTabLeft(entity, data, action)
                                 })
-                                .drag_id(self.tab_drag_id),
+                                .drag_id(self.tab_drag_id_left),
                         )
                         .class(style::Container::Background)
                         .padding([0, space_s])
@@ -5231,14 +5460,14 @@ impl Application for App {
                             widget::tab_bar::horizontal(&self.tab_model2)
                                 .button_height(32)
                                 .button_spacing(space_xxs)
-                                .on_activate(Message::TabActivate)
-                                .on_close(|entity| Message::TabClose(Some(entity)))
-                                .on_dnd_enter(|entity, _| Message::DndEnterTab(entity))
-                                .on_dnd_leave(|_| Message::DndExitTab)
+                                .on_activate(Message::TabActivateRight)
+                                .on_close(|entity| Message::TabCloseRight(Some(entity)))
+                                .on_dnd_enter(|entity, _| Message::DndEnterTabRight(entity))
+                                .on_dnd_leave(|_| Message::DndExitTabRight)
                                 .on_dnd_drop(|entity, data, action| {
-                                    Message::DndDropTab(entity, data, action)
+                                    Message::DndDropTabRight(entity, data, action)
                                 })
-                                .drag_id(self.tab_drag_id),
+                                .drag_id(self.tab_drag_id_right),
                         )
                         .class(style::Container::Background)
                         .padding([0, space_s])
