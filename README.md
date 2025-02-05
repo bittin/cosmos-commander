@@ -1,8 +1,8 @@
 # cosmic-commander
 
-Dual Pane File manager for the COSMIC desktop environment. Think of a less cluttered Krusader.
+Dual Panel File manager for the COSMIC desktop environment. Think of a less cluttered Krusader.
 
-This project is based on COSMIC files.
+This project is based on [COSMIC files](https://github.com/pop-os/cosmic-files).
 
 > [!NOTE]
 > This project is very early in the development process. It barely displays two panels with   tabs and a button bar. Goal is to have an embedded terminal and full interactivity between the two panels.
