@@ -503,7 +503,9 @@ pub struct App {
     core: Core,
     nav_bar_context_id: segmented_button::Entity,
     nav_model: segmented_button::SingleSelectModel,
-    tab_model: segmented_button::Model<segmented_button::SingleSelect>,
+    tab_model1: segmented_button::Model<segmented_button::SingleSelect>,
+    tab_model2: segmented_button::Model<segmented_button::SingleSelect>,
+    active_panel: u32,
     config_handler: Option<cosmic_config::Config>,
     config: Config,
     mode: Mode,
@@ -758,13 +760,22 @@ impl App {
                 tab::Mode::Desktop
             }
         };
-        let entity = self
-            .tab_model
-            .insert()
-            .text(tab.title())
-            .data(tab)
-            .closable();
-
+        let entity;
+        if self.active_panel == 1 {
+            entity = self
+                .tab_model1
+                .insert()
+                .text(tab.title())
+                .data(tab)
+                .closable();
+        } else {
+            entity = self
+                .tab_model2
+                .insert()
+                .text(tab.title())
+                .data(tab)
+                .closable();
+        }
         let entity = if activate {
             entity.activate().id()
         } else {
@@ -803,33 +814,50 @@ impl App {
     fn remove_window(&mut self, id: &window::Id) {
         if let Some(WindowKind::Desktop(entity)) = self.windows.remove(id) {
             // Remove the tab from the tab model
-            self.tab_model.remove(entity);
+            if self.active_panel == 1 {
+                self.tab_model1.remove(entity);
+            } else {
+                self.tab_model2.remove(entity);
+            }
         }
     }
 
     fn rescan_operation_selection(&mut self, op_sel: OperationSelection) -> Task<Message> {
         log::info!("rescan_operation_selection {:?}", op_sel);
-        let entity = self.tab_model.active();
-        let Some(tab) = self.tab_model.data::<Tab>(entity) else {
-            return Task::none();
-        };
-        let Some(items) = tab.items_opt() else {
-            return Task::none();
-        };
-        for item in items.iter() {
-            if item.selected {
-                if let Some(path) = item.path_opt() {
-                    if op_sel.selected.contains(path) || op_sel.ignored.contains(path) {
-                        // Ignore if path in selected or ignored paths
-                        continue;
-                    }
-                }
-
-                // Return if there is a previous selection not matching
-                return Task::none();
-            }
+        let entity;
+        if self.active_panel == 1 {
+            entity = self.tab_model1.active();
+        } else {
+            entity = self.tab_model2.active();
         }
-        self.update_tab(entity, tab.location.clone(), Some(op_sel.selected))
+        if let Some(tab) = match self.active_panel {
+            1 => self.tab_model1.data::<Tab>(entity),
+            2 => self.tab_model2.data::<Tab>(entity),
+            _ => {
+                log::error!("unknown panel used!");
+                None
+            },
+        } {
+            let Some(items) = tab.items_opt() else {
+                return Task::none();
+            };
+            for item in items.iter() {
+                if item.selected {
+                    if let Some(path) = item.path_opt() {
+                        if op_sel.selected.contains(path) || op_sel.ignored.contains(path) {
+                            // Ignore if path in selected or ignored paths
+                            continue;
+                        }
+                    }
+    
+                    // Return if there is a previous selection not matching
+                    return Task::none();
+                }
+            }
+            return self.update_tab(entity, tab.location.clone(), Some(op_sel.selected));
+        } else {
+            return Task::none();
+        }
     }
 
     fn update_tab(
@@ -876,9 +904,24 @@ impl App {
 
     fn rescan_trash(&mut self) -> Task<Message> {
         let mut needs_reload = Vec::new();
-        for entity in self.tab_model.iter() {
-            if let Some(tab) = self.tab_model.data::<Tab>(entity) {
-                if let Location::Trash = &tab.location {
+        let entities: Vec<_> = match self.active_panel {
+            1 => self.tab_model1.iter().collect(),
+            2 => self.tab_model2.iter().collect(),
+            _ => {
+                log::error!("unknown panel used!");
+                Vec::new()
+            },
+        };
+        for entity in entities {
+            if let Some(tab) = match self.active_panel {
+                1 => self.tab_model1.data_mut::<Tab>(entity),
+                2 => self.tab_model2.data_mut::<Tab>(entity),
+                _ => {
+                    log::error!("unknown panel used!");
+                    None
+                },
+            } {
+            if let Location::Trash = &tab.location {
                     needs_reload.push((entity, Location::Trash));
                 }
             }
@@ -892,27 +935,54 @@ impl App {
     }
 
     fn search_get(&self) -> Option<&str> {
-        let entity = self.tab_model.active();
-        let tab = self.tab_model.data::<Tab>(entity)?;
-        match &tab.location {
-            Location::Search(_, term, ..) => Some(term),
-            _ => None,
+        let entity;
+        if self.active_panel == 1 {
+            entity = self.tab_model1.active();
+        } else {
+            entity = self.tab_model2.active();
+        }
+        if let Some(tab) = match self.active_panel {
+            1 => self.tab_model1.data::<Tab>(entity),
+            2 => self.tab_model2.data::<Tab>(entity),
+            _ => {
+                log::error!("unknown panel used!");
+                None
+            },
+        } {
+            match &tab.location {
+                Location::Search(_, term, ..) => Some(term),
+                _ => None,
+            }
+        } else {
+            None
         }
     }
 
     fn search_set_active(&mut self, term_opt: Option<String>) -> Task<Message> {
-        let entity = self.tab_model.active();
+        let entity;
+        if self.active_panel == 1 {
+            entity = self.tab_model1.active();
+        } else {
+            entity = self.tab_model2.active();
+        }
         self.search_set(entity, term_opt, None)
     }
 
     fn search_set(
         &mut self,
-        tab: Entity,
+        entity: Entity,
         term_opt: Option<String>,
         selection_paths: Option<Vec<PathBuf>>,
     ) -> Task<Message> {
         let mut title_location_opt = None;
-        if let Some(tab) = self.tab_model.data_mut::<Tab>(tab) {
+        if let Some(tab) = match self.active_panel {
+            1 => self.tab_model1.data_mut::<Tab>(entity),
+            2 => self.tab_model2.data_mut::<Tab>(entity),
+            _ => {
+                log::error!("unknown panel used!");
+                None
+            },
+        } {
             let location_opt = match term_opt {
                 Some(term) => match &tab.location {
                     Location::Path(path) | Location::Search(path, ..) => Some((
@@ -937,11 +1007,15 @@ impl App {
             }
         }
         if let Some((title, location, focus_search)) = title_location_opt {
-            self.tab_model.text_set(tab, title);
+            if self.active_panel == 1 {
+                self.tab_model1.text_set(entity, title);
+            } else {
+                self.tab_model2.text_set(entity, title);
+            }
             return Task::batch([
                 self.update_title(),
                 self.update_watcher(),
-                self.rescan_tab(tab, location, selection_paths),
+                self.rescan_tab(entity, location, selection_paths),
                 if focus_search {
                     widget::text_input::focus(self.search_id.clone())
                 } else {
@@ -954,8 +1028,24 @@ impl App {
 
     fn selected_paths(&self, entity_opt: Option<Entity>) -> Vec<PathBuf> {
         let mut paths = Vec::new();
-        let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
-        if let Some(tab) = self.tab_model.data::<Tab>(entity) {
+        let entity = match entity_opt {
+            Some(entity) => entity,
+            None => {
+                if self.active_panel == 1 {
+                    self.tab_model1.active()
+                } else {
+                    self.tab_model2.active()
+                }
+            }
+        };
+        if let Some(tab) = match self.active_panel {
+            1 => self.tab_model1.data::<Tab>(entity),
+            2 => self.tab_model2.data::<Tab>(entity),
+            _ => {
+                log::error!("unknown panel used!");
+                None
+            },
+        } {
             for location in tab.selected_locations() {
                 if let Some(path) = location.path_opt() {
                     paths.push(path.to_path_buf());
@@ -968,7 +1058,14 @@ impl App {
     fn update_config(&mut self) -> Task<Message> {
         self.update_nav_model();
         // Tabs are collected first to placate the borrowck
-        let tabs: Vec<_> = self.tab_model.iter().collect();
+        let tabs: Vec<_> = match self.active_panel {
+            1 => self.tab_model1.iter().collect(),
+            2 => self.tab_model2.iter().collect(),
+            _ => {
+                log::error!("unknown panel used!");
+                Vec::new()
+            },
+        };
         // Update main conf and each tab with the new config
         let commands: Vec<_> = std::iter::once(cosmic::app::command::set_theme(
             self.config.app_theme.theme(),
@@ -985,9 +1082,24 @@ impl App {
 
     fn update_desktop(&mut self) -> Task<Message> {
         let mut needs_reload = Vec::new();
-        for entity in self.tab_model.iter() {
-            if let Some(tab) = self.tab_model.data::<Tab>(entity) {
-                if let Location::Desktop(path, output, _) = &tab.location {
+        let entities: Vec<_> = match self.active_panel {
+            1 => self.tab_model1.iter().collect(),
+            2 => self.tab_model2.iter().collect(),
+            _ => {
+                log::error!("unknown panel used!");
+                Vec::new()
+            },
+        };
+        for entity in entities {
+            if let Some(tab) = match self.active_panel {
+                1 => self.tab_model1.data_mut::<Tab>(entity),
+                2 => self.tab_model2.data_mut::<Tab>(entity),
+                _ => {
+                    log::error!("unknown panel used!");
+                    None
+                },
+            } {
+            if let Location::Desktop(path, output, _) = &tab.location {
                     needs_reload.push((
                         entity,
                         Location::Desktop(path.clone(), output.clone(), self.config.desktop),
@@ -997,7 +1109,14 @@ impl App {
         }
         let mut commands = Vec::with_capacity(needs_reload.len());
         for (entity, location) in needs_reload {
-            if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+            if let Some(tab) = match self.active_panel {
+                1 => self.tab_model1.data_mut::<Tab>(entity),
+                2 => self.tab_model2.data_mut::<Tab>(entity),
+                _ => {
+                    log::error!("unknown panel used!");
+                    None
+                },
+            } {
                 tab.location = location.clone();
             }
             commands.push(self.update_tab(entity, location, None));
@@ -1111,9 +1230,16 @@ impl App {
 
         self.nav_model = nav_model.build();
 
-        let tab_entity = self.tab_model.active();
-        if let Some(tab) = self.tab_model.data::<Tab>(tab_entity) {
-            self.activate_nav_model_location(&tab.location.clone());
+        if self.active_panel == 1 {
+            let tab_entity = self.tab_model1.active();
+            if let Some(tab) = self.tab_model1.data::<Tab>(tab_entity) {
+                self.activate_nav_model_location(&tab.location.clone());
+            }
+        } else {
+            let tab_entity = self.tab_model2.active();
+            if let Some(tab) = self.tab_model2.data::<Tab>(tab_entity) {
+                self.activate_nav_model_location(&tab.location.clone());
+            }
         }
     }
 
@@ -1143,10 +1269,18 @@ impl App {
     }
 
     fn update_title(&mut self) -> Task<Message> {
-        let window_title = match self.tab_model.text(self.tab_model.active()) {
-            Some(tab_title) => format!("{tab_title} — {}", fl!("cosmic-commander")),
-            None => fl!("cosmic-commander"),
-        };
+        let window_title;
+        if self.active_panel == 1 {
+            window_title = match self.tab_model1.text(self.tab_model1.active()) {
+                Some(tab_title) => format!("{tab_title} — {}", fl!("cosmic-commander")),
+                None => fl!("cosmic-commander"),
+            };
+        } else {
+            window_title = match self.tab_model2.text(self.tab_model2.active()) {
+                Some(tab_title) => format!("{tab_title} — {}", fl!("cosmic-commander")),
+                None => fl!("cosmic-commander"),
+            };           
+        }
         if let Some(window_id) = &self.window_id_opt {
             self.set_window_title(window_title, *window_id)
         } else {
@@ -1157,9 +1291,24 @@ impl App {
     fn update_watcher(&mut self) -> Task<Message> {
         if let Some((mut watcher, old_paths)) = self.watcher_opt.take() {
             let mut new_paths = HashSet::new();
-            for entity in self.tab_model.iter() {
-                if let Some(tab) = self.tab_model.data::<Tab>(entity) {
-                    if let Some(path) = tab.location.path_opt() {
+            let entities: Vec<_> = match self.active_panel {
+                1 => self.tab_model1.iter().collect(),
+                2 => self.tab_model2.iter().collect(),
+                _ => {
+                    log::error!("unknown panel used!");
+                    Vec::new()
+                },
+            };
+            for entity in entities {
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data::<Tab>(entity),
+                    2 => self.tab_model2.data::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
+                if let Some(path) = tab.location.path_opt() {
                         new_paths.insert(path.to_path_buf());
                     }
                 }
@@ -1431,13 +1580,29 @@ impl App {
         let cosmic_theme::Spacing { space_l, .. } = theme::active().cosmic().spacing;
 
         let mut children = Vec::with_capacity(1);
-        let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
+        let entity = match entity_opt.to_owned() {
+            Some(entity) => entity,
+            None => {
+                if self.active_panel == 1 {
+                    self.tab_model1.active()
+                } else {
+                    self.tab_model2.active()
+                }
+            }
+        };
         match kind {
             PreviewKind::Custom(PreviewItem(item)) => {
                 children.push(item.preview_view(Some(&self.mime_app_cache), IconSizes::default()));
             }
             PreviewKind::Location(location) => {
-                if let Some(tab) = self.tab_model.data::<Tab>(entity) {
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data::<Tab>(entity),
+                    2 => self.tab_model2.data::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     if let Some(items) = tab.items_opt() {
                         for item in items.iter() {
                             if item.location_opt.as_ref() == Some(location) {
@@ -1454,7 +1619,14 @@ impl App {
                 }
             }
             PreviewKind::Selected => {
-                if let Some(tab) = self.tab_model.data::<Tab>(entity) {
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data::<Tab>(entity),
+                    2 => self.tab_model2.data::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     if let Some(items) = tab.items_opt() {
                         for item in items.iter() {
                             if item.selected {
@@ -1568,7 +1740,9 @@ impl Application for App {
             core,
             nav_bar_context_id: segmented_button::Entity::null(),
             nav_model: segmented_button::ModelBuilder::default().build(),
-            tab_model: segmented_button::ModelBuilder::default().build(),
+            tab_model1: segmented_button::ModelBuilder::default().build(),
+            tab_model2: segmented_button::ModelBuilder::default().build(),
+            active_panel: 1,
             config_handler: flags.config_handler,
             config: flags.config,
             mode: flags.mode,
@@ -1625,11 +1799,21 @@ impl Application for App {
             commands.push(app.open_tab(location, true, None));
         }
 
-        if app.tab_model.iter().next().is_none() {
-            if let Ok(current_dir) = env::current_dir() {
-                commands.push(app.open_tab(Location::Path(current_dir), true, None));
-            } else {
-                commands.push(app.open_tab(Location::Path(home_dir()), true, None));
+        if app.active_panel == 1 {
+            if app.tab_model1.iter().next().is_none() {
+                if let Ok(current_dir) = env::current_dir() {
+                    commands.push(app.open_tab(Location::Path(current_dir), true, None));
+                } else {
+                    commands.push(app.open_tab(Location::Path(home_dir()), true, None));
+                }
+            }
+        } else {
+            if app.tab_model2.iter().next().is_none() {
+                if let Ok(current_dir) = env::current_dir() {
+                    commands.push(app.open_tab(Location::Path(current_dir), true, None));
+                } else {
+                    commands.push(app.open_tab(Location::Path(home_dir()), true, None));
+                }
             }
         }
 
@@ -1776,15 +1960,27 @@ impl Application for App {
     }
 
     fn on_escape(&mut self) -> Task<Self::Message> {
-        let entity = self.tab_model.active();
-
+        let entity;
+        if self.active_panel == 1 {
+            entity = self.tab_model1.active();
+        } else {
+            entity = self.tab_model2.active();
+        }
         // Close dialog if open
         if self.dialog_pages.pop_front().is_some() {
             return Task::none();
         }
 
         // Close gallery mode if open
-        if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+        if let Some(tab) = match self.active_panel {
+            1 => self.tab_model1.data_mut::<Tab>(entity),
+            2 => self.tab_model2.data_mut::<Tab>(entity),
+            _ => {
+                log::error!("unknown panel used!");
+                None
+            },
+        } {
+
             if tab.gallery {
                 tab.gallery = false;
                 return Task::none();
@@ -1803,7 +1999,15 @@ impl Application for App {
             // Close search if open
             return self.search_set_active(None);
         }
-        if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+        if let Some(tab) = match self.active_panel {
+            1 => self.tab_model1.data_mut::<Tab>(entity),
+            2 => self.tab_model2.data_mut::<Tab>(entity),
+            _ => {
+                log::error!("unknown panel used!");
+                None
+            },
+        } {
+    
             if tab.context_menu.is_some() {
                 tab.context_menu = None;
                 return Task::none();
@@ -2097,7 +2301,12 @@ impl Application for App {
                 }
             }
             Message::Key(modifiers, key) => {
-                let entity = self.tab_model.active();
+                let entity;
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                } else {
+                    entity = self.tab_model2.active();
+                }
                 for (key_bind, action) in self.key_binds.iter() {
                     if key_bind.matches(modifiers, &key) {
                         return self.update(action.message(Some(entity)));
@@ -2153,9 +2362,23 @@ impl Application for App {
                 let mut commands = Vec::new();
                 {
                     let home_location = Location::Path(home_dir());
-                    let entities: Vec<_> = self.tab_model.iter().collect();
+                    let entities: Vec<_> = match self.active_panel {
+                        1 => self.tab_model1.iter().collect(),
+                        2 => self.tab_model2.iter().collect(),
+                        _ => {
+                            log::error!("unknown panel used!");
+                            Vec::new()
+                        },
+                    };
                     for entity in entities {
-                        let title_opt = match self.tab_model.data_mut::<Tab>(entity) {
+                        let title_opt = match { match self.active_panel {
+                            1 => self.tab_model1.data_mut::<Tab>(entity),
+                            2 => self.tab_model2.data_mut::<Tab>(entity),
+                            _ => {
+                                log::error!("unknown panel used!");
+                                None
+                            },
+                        } } {
                             Some(tab) => {
                                 if unmounted.contains(&tab.location) {
                                     tab.change_location(&home_location, None);
@@ -2167,7 +2390,11 @@ impl Application for App {
                             None => None,
                         };
                         if let Some(title) = title_opt {
-                            self.tab_model.text_set(entity, title);
+                            if self.active_panel == 1 {
+                                self.tab_model1.text_set(entity, title);
+                            } else {
+                                self.tab_model2.text_set(entity, title);
+                            }
                             commands.push(self.update_tab(entity, home_location.clone(), None));
                         }
                     }
@@ -2256,8 +2483,24 @@ impl Application for App {
                 }
             }
             Message::NewItem(entity_opt, dir) => {
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
-                if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     if let Some(path) = &tab.location.path_opt() {
                         self.dialog_pages.push_back(DialogPage::NewItem {
                             parent: path.to_path_buf(),
@@ -2276,9 +2519,23 @@ impl Application for App {
                 log::debug!("{:?}", events);
 
                 let mut needs_reload = Vec::new();
-                let entities: Vec<_> = self.tab_model.iter().collect();
+                let entities: Vec<_> = match self.active_panel {
+                    1 => self.tab_model1.iter().collect(),
+                    2 => self.tab_model2.iter().collect(),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        Vec::new()
+                    },
+                };
                 for entity in entities {
-                    if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+                    if let Some(tab) = match self.active_panel {
+                        1 => self.tab_model1.data_mut::<Tab>(entity),
+                        2 => self.tab_model2.data_mut::<Tab>(entity),
+                        _ => {
+                            log::error!("unknown panel used!");
+                            None
+                        },
+                    } {
                         if let Some(path) = &tab.location.path_opt() {
                             let mut contains_change = false;
                             for event in events.iter() {
@@ -2352,8 +2609,24 @@ impl Application for App {
             Message::OpenTerminal(entity_opt) => {
                 if let Some(terminal) = self.mime_app_cache.terminal() {
                     let mut paths = Vec::new();
-                    let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
-                    if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+                    let entity = match entity_opt {
+                        Some(entity) => entity,
+                        None => {
+                            if self.active_panel == 1 {
+                                self.tab_model1.active()
+                            } else {
+                                self.tab_model2.active()
+                            }
+                        }
+                    };
+                    if let Some(tab) = match self.active_panel {
+                        1 => self.tab_model1.data_mut::<Tab>(entity),
+                        2 => self.tab_model2.data_mut::<Tab>(entity),
+                        _ => {
+                            log::error!("unknown panel used!");
+                            None
+                        },
+                    } {
                         if let Some(path) = &tab.location.path_opt() {
                             if let Some(items) = tab.items_opt() {
                                 for item in items.iter() {
@@ -2452,8 +2725,24 @@ impl Application for App {
                 None => {}
             },
             Message::OpenWithDialog(entity_opt) => {
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
-                if let Some(tab) = self.tab_model.data::<Tab>(entity) {
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data::<Tab>(entity),
+                    2 => self.tab_model2.data::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     if let Some(items) = tab.items_opt() {
                         for item in items {
                             if !item.selected {
@@ -2483,8 +2772,24 @@ impl Application for App {
                 }
             }
             Message::Paste(entity_opt) => {
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
-                if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     if let Some(path) = tab.location.path_opt() {
                         let to = path.clone();
                         return clipboard::read_data::<ClipboardPaste>().map(move |contents_opt| {
@@ -2667,8 +2972,24 @@ impl Application for App {
             }
 
             Message::Rename(entity_opt) => {
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
-                if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     if let Some(items) = tab.items_opt() {
                         let mut selected = Vec::new();
                         for item in items.iter() {
@@ -2723,8 +3044,24 @@ impl Application for App {
             }
             Message::RestoreFromTrash(entity_opt) => {
                 let mut trash_items = Vec::new();
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
-                if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     if let Some(items) = tab.items_opt() {
                         for item in items.iter() {
                             if item.selected {
@@ -2765,75 +3102,154 @@ impl Application for App {
                 return self.update_config();
             }
             Message::TabActivate(entity) => {
-                self.tab_model.activate(entity);
+                if self.active_panel == 1 {
+                    self.tab_model1.activate(entity);
 
-                if let Some(tab) = self.tab_model.data::<Tab>(entity) {
-                    self.activate_nav_model_location(&tab.location.clone());
+                    if let Some(tab) = self.tab_model1.data::<Tab>(entity) {
+                        self.activate_nav_model_location(&tab.location.clone());
+                    }
+                } else {
+                    self.tab_model2.activate(entity);
+
+                    if let Some(tab) = self.tab_model2.data::<Tab>(entity) {
+                        self.activate_nav_model_location(&tab.location.clone());
+                    }
                 }
                 return self.update_title();
             }
             Message::TabNext => {
-                let len = self.tab_model.iter().count();
-                let pos = self
-                    .tab_model
-                    .position(self.tab_model.active())
-                    // Wraparound to 0 if i + 1 > num of tabs
-                    .map(|i| (i as usize + 1) % len)
-                    .expect("should always be at least one tab open");
+                if self.active_panel == 1 {
+                    let len = self.tab_model1.iter().count();
+                    let pos = self
+                        .tab_model1
+                        .position(self.tab_model1.active())
+                        // Wraparound to 0 if i + 1 > num of tabs
+                        .map(|i| (i as usize + 1) % len)
+                        .expect("should always be at least one tab open");
 
-                let entity = self.tab_model.iter().nth(pos);
-                if let Some(entity) = entity {
-                    return self.update(Message::TabActivate(entity));
+                    let entity = self.tab_model1.iter().nth(pos);
+                    if let Some(entity) = entity {
+                        return self.update(Message::TabActivate(entity));
+                    }
+                } else {
+                    let len = self.tab_model2.iter().count();
+                    let pos = self
+                        .tab_model2
+                        .position(self.tab_model2.active())
+                        // Wraparound to 0 if i + 1 > num of tabs
+                        .map(|i| (i as usize + 1) % len)
+                        .expect("should always be at least one tab open");
+
+                    let entity = self.tab_model2.iter().nth(pos);
+                    if let Some(entity) = entity {
+                        return self.update(Message::TabActivate(entity));
+                    }
                 }
             }
             Message::TabPrev => {
-                let pos = self
-                    .tab_model
-                    .position(self.tab_model.active())
-                    .and_then(|i| (i as usize).checked_sub(1))
-                    // Subtraction underflow => last tab; i.e. it wraps around
-                    .unwrap_or_else(|| {
-                        self.tab_model
-                            .iter()
-                            .count()
-                            .checked_sub(1)
-                            .unwrap_or_default()
-                    });
+                if self.active_panel == 1 {
+                    let pos = self
+                        .tab_model1
+                        .position(self.tab_model1.active())
+                        .and_then(|i| (i as usize).checked_sub(1))
+                        // Subtraction underflow => last tab; i.e. it wraps around
+                        .unwrap_or_else(|| {
+                            self.tab_model1
+                                .iter()
+                                .count()
+                                .checked_sub(1)
+                                .unwrap_or_default()
+                        });
 
-                let entity = self.tab_model.iter().nth(pos);
-                if let Some(entity) = entity {
-                    return self.update(Message::TabActivate(entity));
+                    let entity = self.tab_model1.iter().nth(pos);
+                    if let Some(entity) = entity {
+                        return self.update(Message::TabActivate(entity));
+                    }
+                } else {
+                    let pos = self
+                        .tab_model2
+                        .position(self.tab_model2.active())
+                        .and_then(|i| (i as usize).checked_sub(1))
+                        // Subtraction underflow => last tab; i.e. it wraps around
+                        .unwrap_or_else(|| {
+                            self.tab_model2
+                                .iter()
+                                .count()
+                                .checked_sub(1)
+                                .unwrap_or_default()
+                        });
+
+                    let entity = self.tab_model2.iter().nth(pos);
+                    if let Some(entity) = entity {
+                        return self.update(Message::TabActivate(entity));
+                    }
                 }
             }
             Message::TabClose(entity_opt) => {
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+                if self.active_panel == 1 {
+                    if let Some(position) = self.tab_model1.position(entity) {
+                        let new_position = if position > 0 {
+                            position - 1
+                        } else {
+                            position + 1
+                        };
 
-                // Activate closest item
-                if let Some(position) = self.tab_model.position(entity) {
-                    let new_position = if position > 0 {
-                        position - 1
-                    } else {
-                        position + 1
-                    };
-
-                    if self.tab_model.activate_position(new_position) {
-                        if let Some(new_entity) = self.tab_model.entity_at(new_position) {
-                            if let Some(tab) = self.tab_model.data::<Tab>(new_entity) {
-                                self.activate_nav_model_location(&tab.location.clone());
+                        if self.tab_model1.activate_position(new_position) {
+                            if let Some(new_entity) = self.tab_model1.entity_at(new_position) {
+                                if let Some(tab) = self.tab_model1.data::<Tab>(new_entity) {
+                                    self.activate_nav_model_location(&tab.location.clone());
+                                }
                             }
                         }
                     }
-                }
 
-                // Remove item
-                self.tab_model.remove(entity);
+                    // Remove item
+                    self.tab_model1.remove(entity);
+    
+                    // If that was the last tab, close window
+                    if self.tab_model1.iter().next().is_none() {
+                        if let Some(window_id) = &self.window_id_opt {
+                            return window::close(*window_id);
+                        }
+                    }
+                } else  {
+                    if let Some(position) = self.tab_model2.position(entity) {
+                        let new_position = if position > 0 {
+                            position - 1
+                        } else {
+                            position + 1
+                        };
 
-                // If that was the last tab, close window
-                if self.tab_model.iter().next().is_none() {
-                    if let Some(window_id) = &self.window_id_opt {
-                        return window::close(*window_id);
+                        if self.tab_model2.activate_position(new_position) {
+                            if let Some(new_entity) = self.tab_model2.entity_at(new_position) {
+                                if let Some(tab) = self.tab_model2.data::<Tab>(new_entity) {
+                                    self.activate_nav_model_location(&tab.location.clone());
+                                }
+                            }
+                        }
+                    }
+
+                    // Remove item
+                    self.tab_model2.remove(entity);
+    
+                    // If that was the last tab, close window
+                    if self.tab_model2.iter().next().is_none() {
+                        if let Some(window_id) = &self.window_id_opt {
+                            return window::close(*window_id);
+                        }
                     }
                 }
+                // Activate closest item   
 
                 return Task::batch([self.update_title(), self.update_watcher()]);
             }
@@ -2849,7 +3265,16 @@ impl Application for App {
                 return self.update(Message::TabConfig(config));
             }
             Message::TabMessage(entity_opt, tab_message) => {
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
 
                 //TODO: move to Task?
                 if let tab::Message::ContextMenu(_point_opt) = tab_message {
@@ -2857,7 +3282,16 @@ impl Application for App {
                     self.set_show_context(false);
                 }
 
-                let tab_commands = match self.tab_model.data_mut::<Tab>(entity) {
+                let tab_commands = match {
+                    match self.active_panel {
+                        1 => self.tab_model1.data_mut::<Tab>(entity),
+                        2 => self.tab_model2.data_mut::<Tab>(entity),
+                        _ => {
+                            log::error!("unknown panel used!");
+                            None
+                        },
+                    }
+                } {
                     Some(tab) => tab.update(tab_message, self.modifiers),
                     _ => Vec::new(),
                 };
@@ -2884,7 +3318,11 @@ impl Application for App {
                         tab::Command::ChangeLocation(tab_title, tab_path, selection_paths) => {
                             self.activate_nav_model_location(&tab_path);
 
-                            self.tab_model.text_set(entity, tab_title);
+                            if self.active_panel == 1 {
+                                self.tab_model1.text_set(entity, tab_title);
+                            } else {
+                                self.tab_model2.text_set(entity, tab_title);
+                            }
                             commands.push(Task::batch([
                                 self.update_title(),
                                 self.update_watcher(),
@@ -2960,15 +3398,38 @@ impl Application for App {
                 return Task::batch(commands);
             }
             Message::TabNew => {
-                let active = self.tab_model.active();
-                let location = match self.tab_model.data::<Tab>(active) {
+                let entity = match self.active_panel {
+                    1 => self.tab_model1.active(),
+                    2 => self.tab_model2.active(),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        self.tab_model1.active()
+                    },    
+                };
+                let location = match {
+                    match self.active_panel {
+                        1 => self.tab_model1.data_mut::<Tab>(entity),
+                        2 => self.tab_model2.data_mut::<Tab>(entity),
+                        _ => {
+                            log::error!("unknown panel used!");
+                            None
+                        },
+                    }
+                } {
                     Some(tab) => tab.location.clone(),
                     None => Location::Path(home_dir()),
                 };
                 return self.open_tab(location, true, None);
             }
             Message::TabRescan(entity, location, parent_item_opt, items, selection_paths) => {
-                if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     if location == tab.location {
                         tab.parent_item_opt = parent_item_opt;
                         tab.set_items(items);
@@ -2979,8 +3440,25 @@ impl Application for App {
                 }
             }
             Message::TabView(entity_opt, view) => {
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
-                if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     tab.config.view = view;
                 }
                 let mut config = self.config.tab;
@@ -3047,8 +3525,20 @@ impl Application for App {
                 }
             }
             Message::WindowUnfocus => {
-                let tab_entity = self.tab_model.active();
-                if let Some(tab) = self.tab_model.data_mut::<Tab>(tab_entity) {
+                let tab_entity;
+                if self.active_panel == 1 {
+                    tab_entity = self.tab_model1.active();
+                } else {
+                    tab_entity = self.tab_model2.active();
+                }
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(tab_entity),
+                    2 => self.tab_model2.data_mut::<Tab>(tab_entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     tab.context_menu = None;
                 }
             }
@@ -3067,9 +3557,25 @@ impl Application for App {
                 }
             },
             Message::ZoomDefault(entity_opt) => {
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
                 let mut config = self.config.tab;
-                if let Some(tab) = self.tab_model.data::<Tab>(entity) {
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     match tab.config.view {
                         tab::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
                         tab::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
@@ -3078,7 +3584,17 @@ impl Application for App {
                 return self.update(Message::TabConfig(config));
             }
             Message::ZoomIn(entity_opt) => {
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+
                 let zoom_in = |size: &mut NonZeroU16, min: u16, max: u16| {
                     let mut step = min;
                     while step <= max {
@@ -3093,7 +3609,14 @@ impl Application for App {
                     }
                 };
                 let mut config = self.config.tab;
-                if let Some(tab) = self.tab_model.data::<Tab>(entity) {
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     match tab.config.view {
                         tab::View::List => zoom_in(&mut config.icon_sizes.list, 50, 500),
                         tab::View::Grid => zoom_in(&mut config.icon_sizes.grid, 50, 500),
@@ -3102,7 +3625,17 @@ impl Application for App {
                 return self.update(Message::TabConfig(config));
             }
             Message::ZoomOut(entity_opt) => {
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+
                 let zoom_out = |size: &mut NonZeroU16, min: u16, max: u16| {
                     let mut step = max;
                     while step >= min {
@@ -3117,7 +3650,14 @@ impl Application for App {
                     }
                 };
                 let mut config = self.config.tab;
-                if let Some(tab) = self.tab_model.data::<Tab>(entity) {
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     match tab.config.view {
                         tab::View::List => zoom_out(&mut config.icon_sizes.list, 50, 500),
                         tab::View::Grid => zoom_out(&mut config.icon_sizes.grid, 50, 500),
@@ -3171,8 +3711,20 @@ impl Application for App {
                     .is_some_and(|(loc, i)| *loc == location && i.elapsed() >= HOVER_DURATION)
                 {
                     self.nav_dnd_hover = None;
-                    let entity = self.tab_model.active();
-                    let title_opt = match self.tab_model.data_mut::<Tab>(entity) {
+                        let entity;
+                    if self.active_panel == 1 {
+                        entity = self.tab_model1.active();
+                    } else {
+                        entity = self.tab_model2.active();
+                    }
+                    let title_opt = match { match self.active_panel {
+                        1 => self.tab_model1.data_mut::<Tab>(entity),
+                        2 => self.tab_model2.data_mut::<Tab>(entity),
+                        _ => {
+                            log::error!("unknown panel used!");
+                            None
+                        },
+                    } } {
                         Some(tab) => {
                             tab.change_location(&location, None);
                             Some(tab.title())
@@ -3180,7 +3732,11 @@ impl Application for App {
                         None => None,
                     };
                     if let Some(title) = title_opt {
-                        self.tab_model.text_set(entity, title);
+                        if self.active_panel == 1 {
+                            self.tab_model1.text_set(entity, title);
+                        } else {
+                            self.tab_model2.text_set(entity, title);
+                        }
                         return Task::batch([
                             self.update_title(),
                             self.update_watcher(),
@@ -3200,7 +3756,14 @@ impl Application for App {
             }
             Message::DndDropTab(entity, data, action) => {
                 self.nav_dnd_hover = None;
-                if let Some((tab, data)) = self.tab_model.data::<Tab>(entity).zip(data) {
+                if let Some((tab, data)) = match self.active_panel {
+                    1 => self.tab_model1.data::<Tab>(entity),
+                    2 => self.tab_model2.data::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                }.zip(data) {
                     let kind = match action {
                         DndAction::Move => ClipboardKind::Cut,
                         _ => ClipboardKind::Copy,
@@ -3247,8 +3810,20 @@ impl Application for App {
             // Tracks which nav bar item to show a context menu for.
             Message::NavBarContext(entity) => {
                 // Close location editing if enabled
-                let tab_entity = self.tab_model.active();
-                if let Some(tab) = self.tab_model.data_mut::<Tab>(tab_entity) {
+                let tab_entity;
+                if self.active_panel == 1 {
+                    tab_entity = self.tab_model1.active();
+                } else {
+                    tab_entity = self.tab_model2.active();
+                }
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(tab_entity),
+                    2 => self.tab_model2.data_mut::<Tab>(tab_entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     tab.edit_location = None;
                 }
 
@@ -3518,8 +4093,25 @@ impl Application for App {
             }
             ContextPage::Preview(entity_opt, kind) => {
                 let mut actions = Vec::with_capacity(3);
-                let entity = entity_opt.unwrap_or_else(|| self.tab_model.active());
-                if let Some(tab) = self.tab_model.data::<Tab>(entity) {
+                let entity = match entity_opt.to_owned() {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data::<Tab>(entity),
+                    2 => self.tab_model2.data::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } {
                     if let Some(items) = tab.items_opt() {
                         for item in items.iter() {
                             if item.selected {
@@ -3547,8 +4139,20 @@ impl Application for App {
 
     fn dialog(&self) -> Option<Element<Message>> {
         //TODO: should gallery view just be a dialog?
-        let entity = self.tab_model.active();
-        if let Some(tab) = self.tab_model.data::<Tab>(entity) {
+        let entity;
+        if self.active_panel == 1 {
+            entity = self.tab_model1.active();
+        } else {
+            entity = self.tab_model2.active();
+        }
+        if let Some(tab) = match self.active_panel {
+            1 => self.tab_model1.data::<Tab>(entity),
+            2 => self.tab_model2.data::<Tab>(entity),
+            _ => {
+                log::error!("unknown panel used!");
+                None
+            },
+        } {
             if tab.gallery {
                 return Some(
                     tab.gallery_view()
@@ -4235,11 +4839,19 @@ impl Application for App {
     }
 
     fn header_start(&self) -> Vec<Element<Self::Message>> {
-        vec![menu::menu_bar(
-            self.tab_model.active_data::<Tab>(),
-            &self.config,
-            &self.key_binds,
-        )]
+        if self.active_panel == 1 {
+            vec![menu::menu_bar(
+                self.tab_model1.active_data::<Tab>(),
+                &self.config,
+                &self.key_binds,
+            )]
+        } else {
+            vec![menu::menu_bar(
+                self.tab_model2.active_data::<Tab>(),
+                &self.config,
+                &self.key_binds,
+            )]
+        }
     }
 
     fn header_end(&self) -> Vec<Element<Self::Message>> {
@@ -4299,30 +4911,65 @@ impl Application for App {
                 )
             }
         }
-
-        if self.tab_model.iter().count() > 1 {
-            tab_column = tab_column.push(
-                widget::container(
-                    widget::tab_bar::horizontal(&self.tab_model)
-                        .button_height(32)
-                        .button_spacing(space_xxs)
-                        .on_activate(Message::TabActivate)
-                        .on_close(|entity| Message::TabClose(Some(entity)))
-                        .on_dnd_enter(|entity, _| Message::DndEnterTab(entity))
-                        .on_dnd_leave(|_| Message::DndExitTab)
-                        .on_dnd_drop(|entity, data, action| {
-                            Message::DndDropTab(entity, data, action)
-                        })
-                        .drag_id(self.tab_drag_id),
-                )
-                .class(style::Container::Background)
-                .width(Length::Fill)
-                .padding([0, space_s]),
-            );
+        if self.active_panel == 1 {
+            if self.tab_model1.iter().count() > 1 {
+                tab_column = tab_column.push(
+                    widget::container(
+                        widget::tab_bar::horizontal(&self.tab_model1)
+                            .button_height(32)
+                            .button_spacing(space_xxs)
+                            .on_activate(Message::TabActivate)
+                            .on_close(|entity| Message::TabClose(Some(entity)))
+                            .on_dnd_enter(|entity, _| Message::DndEnterTab(entity))
+                            .on_dnd_leave(|_| Message::DndExitTab)
+                            .on_dnd_drop(|entity, data, action| {
+                                Message::DndDropTab(entity, data, action)
+                            })
+                            .drag_id(self.tab_drag_id),
+                    )
+                    .class(style::Container::Background)
+                    .width(Length::Fill)
+                    .padding([0, space_s]),
+                );
+            }
+        } else {
+            if self.tab_model2.iter().count() > 1 {
+                tab_column = tab_column.push(
+                    widget::container(
+                        widget::tab_bar::horizontal(&self.tab_model2)
+                            .button_height(32)
+                            .button_spacing(space_xxs)
+                            .on_activate(Message::TabActivate)
+                            .on_close(|entity| Message::TabClose(Some(entity)))
+                            .on_dnd_enter(|entity, _| Message::DndEnterTab(entity))
+                            .on_dnd_leave(|_| Message::DndExitTab)
+                            .on_dnd_drop(|entity, data, action| {
+                                Message::DndDropTab(entity, data, action)
+                            })
+                            .drag_id(self.tab_drag_id),
+                    )
+                    .class(style::Container::Background)
+                    .width(Length::Fill)
+                    .padding([0, space_s]),
+                );
+            }
         }
 
-        let entity = self.tab_model.active();
-        match self.tab_model.data::<Tab>(entity) {
+        let entity;
+        if self.active_panel == 1 {
+            entity = self.tab_model1.active();
+        } else {
+            entity = self.tab_model2.active();
+        }
+        match { 
+            match self.active_panel {
+            1 => self.tab_model1.data::<Tab>(entity),
+            2 => self.tab_model2.data::<Tab>(entity),
+            _ => {
+                log::error!("unknown panel used!");
+                None
+            },
+        } } {
             Some(tab) => {
                 let tab_view = tab
                     .view(&self.key_binds)
@@ -4348,11 +4995,19 @@ impl Application for App {
         let content = match self.windows.get(&id) {
             Some(WindowKind::Desktop(entity)) => {
                 let mut tab_column = widget::column::with_capacity(3);
-
-                let tab_view = match self.tab_model.data::<Tab>(*entity) {
+                let entity = entity.to_owned();
+                let tab_view = match { 
+                    match self.active_panel {
+                    1 => self.tab_model1.data::<Tab>(entity),
+                    2 => self.tab_model2.data::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    },
+                } } {
                     Some(tab) => tab
                         .view(&self.key_binds)
-                        .map(move |message| Message::TabMessage(Some(*entity), message)),
+                        .map(move |message| Message::TabMessage(Some(entity), message)),
                     None => widget::vertical_space().into(),
                 };
 
@@ -4710,11 +5365,37 @@ impl Application for App {
         let mut selected_preview = None;
         if self.core.window.show_context {
             if let ContextPage::Preview(entity_opt, PreviewKind::Selected) = self.context_page {
-                selected_preview = Some(entity_opt.unwrap_or_else(|| self.tab_model.active()));
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => {
+                        if self.active_panel == 1 {
+                            self.tab_model1.active()
+                        } else {
+                            self.tab_model2.active()
+                        }
+                    }
+                };
+
+                selected_preview = Some(entity);
             }
         }
-        for entity in self.tab_model.iter() {
-            if let Some(tab) = self.tab_model.data::<Tab>(entity) {
+        let entities: Vec<_> = match self.active_panel {
+            1 => self.tab_model1.iter().collect(),
+            2 => self.tab_model2.iter().collect(),
+            _ => {
+                log::error!("unknown panel used!");
+                Vec::new()
+            },
+        };
+        for entity in entities {
+            if let Some(tab) = match self.active_panel {
+                1 => self.tab_model1.data::<Tab>(entity),
+                2 => self.tab_model2.data::<Tab>(entity),
+                _ => {
+                    log::error!("unknown panel used!");
+                    None
+                },
+            } {
                 subscriptions.push(
                     tab.subscription(selected_preview == Some(entity))
                         .with(entity)
