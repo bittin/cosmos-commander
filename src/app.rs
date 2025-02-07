@@ -18,13 +18,7 @@ use cosmic::{
     app::{self, context_drawer, message, Core, Task},
     cosmic_config, cosmic_theme, executor,
     iced::{
-        clipboard::dnd::DndAction,
-        event,
-        futures::{self, SinkExt},
-        keyboard::{Event as KeyEvent, Key, Modifiers},
-        stream,
-        window::{self, Event as WindowEvent, Id as WindowId},
-        Alignment, Event, Length, Point, Rectangle, Size, Subscription,
+        clipboard::dnd::DndAction, event, futures::{self, SinkExt}, id, keyboard::{Event as KeyEvent, Key, Modifiers}, stream, window::{self, Event as WindowEvent, Id as WindowId}, Alignment, Event, Length, Point, Rectangle, Size, Subscription
     },
     iced_runtime::clipboard,
     style, theme,
@@ -33,6 +27,7 @@ use cosmic::{
         dnd_destination::DragId,
         horizontal_space,
         menu::{action::MenuAction, key_bind::KeyBind},
+        pane_grid::{self, PaneGrid},
         segmented_button::{self, Entity},
         vertical_space,
     },
@@ -267,6 +262,124 @@ pub enum PreviewKind {
     Selected,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PaneType {
+    ButtonPane,
+    TerminalPane,
+    LeftPane,
+    RightPane,
+}
+
+#[derive(Clone, Copy)]
+struct Pane {
+    id: PaneType,
+    pub is_pinned: bool,
+}
+
+impl Pane {
+    fn new(id: PaneType) -> Self {
+        Self {
+            id,
+            is_pinned: false,
+        }
+    }
+}
+
+fn pane_setup(
+    show_button_row: bool, 
+    show_embedded_terminal: bool, 
+    show_second_panel: bool
+) -> (pane_grid::State<Pane>, Vec<pane_grid::Pane>, Vec<pane_grid::Split>) {
+    let mut panes = Vec::new();
+    let mut splits = Vec::new();
+    let mut panestates;
+    let pane;
+    if show_button_row && show_embedded_terminal && show_second_panel {
+        // full window
+        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
+        if let Some((t, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::TerminalPane)) {
+            panestates.resize(s, 0.75);
+            splits.push(s);
+            if let Some((b, s)) = panestates.split(pane_grid::Axis::Horizontal, t, Pane::new(PaneType::ButtonPane)) {
+                panestates.resize(s, 0.75);
+                panes.push(t);
+                splits.push(s);
+                panes.push(b);
+                if let Some((p, s)) = panestates.split(pane_grid::Axis::Vertical, pane, Pane::new(PaneType::RightPane)) {
+                    splits.push(s);
+                    panes.push(p);    
+                    panes.push(pane);
+                }
+            }
+        }
+    } else if show_button_row && show_embedded_terminal && !show_second_panel {
+        // full window
+        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
+        if let Some((t, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::TerminalPane)) {
+            panestates.resize(s, 0.75);
+            splits.push(s);
+            if let Some((b, s)) = panestates.split(pane_grid::Axis::Horizontal, t, Pane::new(PaneType::ButtonPane)) {
+                panestates.resize(s, 0.75);
+                panes.push(t);
+                splits.push(s);
+                panes.push(b);
+                panes.push(pane);
+            }
+        }
+    } else if !show_button_row && show_embedded_terminal && show_second_panel {
+        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
+        if let Some((p, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::TerminalPane)) {
+            panestates.resize(s, 0.75);
+            splits.push(s);
+            panes.push(p);
+            if let Some((p, s)) = panestates.split(pane_grid::Axis::Vertical, pane, Pane::new(PaneType::RightPane)) {
+                splits.push(s);
+                panes.push(p);
+                panes.push(pane);
+            }
+        }
+    } else if show_button_row && !show_embedded_terminal && show_second_panel {
+        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
+        if let Some((p, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::ButtonPane)) {
+            panes.push(pane);
+            panestates.resize(s, 0.95);
+            splits.push(s);
+            panes.push(p);
+            if let Some((p, s)) = panestates.split(pane_grid::Axis::Vertical, pane, Pane::new(PaneType::RightPane)) {
+                splits.push(s);
+                panes.push(p);
+            }
+        }
+    } else if !show_button_row && show_embedded_terminal && !show_second_panel {
+        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
+        if let Some((p, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::TerminalPane)) {
+            panes.push(pane);
+            panestates.resize(s, 0.75);
+            splits.push(s);
+            panes.push(p);
+        }
+    } else if show_button_row && !show_embedded_terminal && !show_second_panel {
+        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
+        if let Some((p, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::ButtonPane)) {
+            panes.push(pane);
+            panestates.resize(s, 0.95);
+            splits.push(s);
+            panes.push(p);
+        }
+    } else if !show_button_row && !show_embedded_terminal && show_second_panel {
+        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
+        if let Some((p, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::RightPane)) {
+            panes.push(pane);
+            splits.push(s);
+            panes.push(p);
+        }
+    } else {
+        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
+        panes.push(pane);
+    }
+    (panestates, panes, splits)
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum NavMenuAction {
     Open(segmented_button::Entity),
@@ -342,6 +455,18 @@ pub enum Message {
     OpenWithSelection(usize),
     #[cfg(all(feature = "desktop", feature = "wayland"))]
     Overlap(OverlapNotifyEvent, window::Id),
+    PaneUpdate,
+    //PaneSplit(pane_grid::Axis, pane_grid::Pane),
+    //PaneSplitFocused(pane_grid::Axis),
+    PaneFocusAdjacent(pane_grid::Direction),
+    PaneClicked(pane_grid::Pane),
+    PaneDragged(pane_grid::DragEvent),
+    PaneResized(pane_grid::ResizeEvent),
+    PaneTogglePin(pane_grid::Pane),
+    PaneMaximize(pane_grid::Pane),
+    PaneRestore,
+    //PaneClose(pane_grid::Pane),
+    //PaneCloseFocused,
     Paste(Option<Entity>),
     PasteContents(PathBuf, ClipboardPaste),
     PendingCancel(u64),
@@ -368,8 +493,10 @@ pub enum Message {
     StoreOpenPaths,
     SwapPanels,
     TabActivate(Entity),
-    TabActivateLeft(Entity),
-    TabActivateRight(Entity),
+    TabActivateLeft,
+    TabActivateRight,
+    TabActivateLeftEntity(Entity),
+    TabActivateRightEntity(Entity),
     TabNext,
     TabPrev,
     TabClose(Option<Entity>),
@@ -550,7 +677,6 @@ fn osstr_to_string(osstr: std::ffi::OsString) -> String {
     String::new()
 }
 
-
 /// The [`App`] stores application-specific state.
 pub struct App {
     core: Core,
@@ -558,6 +684,11 @@ pub struct App {
     nav_model: segmented_button::SingleSelectModel,
     tab_model1: segmented_button::Model<segmented_button::SingleSelect>,
     tab_model2: segmented_button::Model<segmented_button::SingleSelect>,
+    panes: Vec<pane_grid::Pane>,
+    splits: Vec<pane_grid::Split>,
+    panestates: pane_grid::State<Pane>,
+    panes_created: usize,
+    focus: Option<pane_grid::Pane>,
     active_panel: u32,
     //terminal: Terminal,
     show_button_row: bool,
@@ -877,15 +1008,11 @@ impl App {
         self.open_tab_entity(location, activate, selection_paths).1
     }
 
-    fn activate_left_pane(
-        &mut self
-    ) {
+    fn activate_left_pane(&mut self) {
         self.active_panel = 1;
     }
 
-    fn activate_right_pane(
-        &mut self
-    ) {
+    fn activate_right_pane(&mut self) {
         self.active_panel = 2;
     }
 
@@ -924,7 +1051,7 @@ impl App {
             _ => {
                 log::error!("unknown panel used!");
                 None
-            },
+            }
         } {
             let Some(items) = tab.items_opt() else {
                 return Task::none();
@@ -937,7 +1064,7 @@ impl App {
                             continue;
                         }
                     }
-    
+
                     // Return if there is a previous selection not matching
                     return Task::none();
                 }
@@ -1003,7 +1130,7 @@ impl App {
             _ => {
                 log::error!("unknown panel used!");
                 Vec::new()
-            },
+            }
         };
         for entity in entities {
             if let Some(tab) = match self.active_panel {
@@ -1012,9 +1139,9 @@ impl App {
                 _ => {
                     log::error!("unknown panel used!");
                     None
-                },
+                }
             } {
-            if let Location::Trash = &tab.location {
+                if let Location::Trash = &tab.location {
                     needs_reload.push((entity, Location::Trash));
                 }
             }
@@ -1040,7 +1167,7 @@ impl App {
             _ => {
                 log::error!("unknown panel used!");
                 None
-            },
+            }
         } {
             match &tab.location {
                 Location::Search(_, term, ..) => Some(term),
@@ -1074,7 +1201,7 @@ impl App {
             _ => {
                 log::error!("unknown panel used!");
                 None
-            },
+            }
         } {
             let location_opt = match term_opt {
                 Some(term) => match &tab.location {
@@ -1137,7 +1264,7 @@ impl App {
             _ => {
                 log::error!("unknown panel used!");
                 None
-            },
+            }
         } {
             for location in tab.selected_locations() {
                 if let Some(path) = location.path_opt() {
@@ -1157,7 +1284,7 @@ impl App {
             _ => {
                 log::error!("unknown panel used!");
                 Vec::new()
-            },
+            }
         };
         // Update main conf and each tab with the new config
         let commands: Vec<_>;
@@ -1172,7 +1299,6 @@ impl App {
                 ))
             }))
             .collect();
-           
         } else {
             commands = std::iter::once(cosmic::app::command::set_theme(
                 self.config.app_theme.theme(),
@@ -1184,7 +1310,6 @@ impl App {
                 ))
             }))
             .collect();
-            
         }
         Task::batch(commands)
     }
@@ -1197,7 +1322,7 @@ impl App {
             _ => {
                 log::error!("unknown panel used!");
                 Vec::new()
-            },
+            }
         };
         for entity in entities {
             if let Some(tab) = match self.active_panel {
@@ -1206,9 +1331,9 @@ impl App {
                 _ => {
                     log::error!("unknown panel used!");
                     None
-                },
+                }
             } {
-            if let Location::Desktop(path, output, _) = &tab.location {
+                if let Location::Desktop(path, output, _) = &tab.location {
                     needs_reload.push((
                         entity,
                         Location::Desktop(path.clone(), output.clone(), self.config.desktop),
@@ -1224,7 +1349,7 @@ impl App {
                 _ => {
                     log::error!("unknown panel used!");
                     None
-                },
+                }
             } {
                 tab.location = location.clone();
             }
@@ -1388,7 +1513,7 @@ impl App {
             window_title = match self.tab_model2.text(self.tab_model2.active()) {
                 Some(tab_title) => format!("{tab_title} — {}", fl!("cosmic-commander")),
                 None => fl!("cosmic-commander"),
-            };           
+            };
         }
         if let Some(window_id) = &self.window_id_opt {
             self.set_window_title(window_title, *window_id)
@@ -1406,7 +1531,7 @@ impl App {
                 _ => {
                     log::error!("unknown panel used!");
                     Vec::new()
-                },
+                }
             };
             for entity in entities {
                 if let Some(tab) = match self.active_panel {
@@ -1415,9 +1540,9 @@ impl App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
-                if let Some(path) = tab.location.path_opt() {
+                    if let Some(path) = tab.location.path_opt() {
                         new_paths.insert(path.to_path_buf());
                     }
                 }
@@ -1469,26 +1594,29 @@ impl App {
         let short_hash: String = hash.chars().take(7).collect();
         let date = env!("VERGEN_GIT_COMMIT_DATE");
         widget::column::with_children(vec![
-                widget::svg(widget::svg::Handle::from_memory(
-                    &include_bytes!(
-                        "../res/icons/hicolor/128x128/apps/eu.fangornsrealm.Cosmic-Commander.svg"
-                    )[..],
-                ))
+            widget::svg(widget::svg::Handle::from_memory(
+                &include_bytes!(
+                    "../res/icons/hicolor/128x128/apps/eu.fangornsrealm.Cosmic-Commander.svg"
+                )[..],
+            ))
+            .into(),
+            widget::text::title3(fl!("cosmic-commander")).into(),
+            widget::button::link(repository)
+                .on_press(Message::LaunchUrl(repository.to_string()))
+                .padding(0)
                 .into(),
-                widget::text::title3(fl!("cosmic-commander")).into(),
-                widget::button::link(repository)
-                    .on_press(Message::LaunchUrl(repository.to_string()))
-                    .padding(0)
-                    .into(),
-                widget::button::link(fl!(
-                    "git-description",
-                    hash = short_hash.as_str(),
-                    date = date
-                ))
-                    .on_press(Message::LaunchUrl(format!("{}/commits/{}", repository, hash)))
-                    .padding(0)
-                .into(),
-            ])
+            widget::button::link(fl!(
+                "git-description",
+                hash = short_hash.as_str(),
+                date = date
+            ))
+            .on_press(Message::LaunchUrl(format!(
+                "{}/commits/{}",
+                repository, hash
+            )))
+            .padding(0)
+            .into(),
+        ])
         .align_x(Alignment::Center)
         .spacing(space_xxs)
         .into()
@@ -1710,7 +1838,7 @@ impl App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if let Some(items) = tab.items_opt() {
                         for item in items.iter() {
@@ -1734,7 +1862,7 @@ impl App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if let Some(items) = tab.items_opt() {
                         for item in items.iter() {
@@ -1773,25 +1901,26 @@ impl App {
         // TODO: Should dialog be updated here too?
         widget::column::with_children(vec![
             widget::settings::section()
-            .title(fl!("appearance"))
-            .add({
-                let app_theme_selected = match self.config.app_theme {
-                    AppTheme::Dark => 1,
-                    AppTheme::Light => 2,
-                    AppTheme::System => 0,
-                };
-                widget::settings::item::builder(fl!("theme")).control(widget::dropdown(
-                    &self.app_themes,
-                    Some(app_theme_selected),
-                    move |index| {
-                        Message::AppTheme(match index {
-                            1 => AppTheme::Dark,
-                            2 => AppTheme::Light,
-                            _ => AppTheme::System,
-                        })
-                    },
-                ))
-            }).into(),
+                .title(fl!("appearance"))
+                .add({
+                    let app_theme_selected = match self.config.app_theme {
+                        AppTheme::Dark => 1,
+                        AppTheme::Light => 2,
+                        AppTheme::System => 0,
+                    };
+                    widget::settings::item::builder(fl!("theme")).control(widget::dropdown(
+                        &self.app_themes,
+                        Some(app_theme_selected),
+                        move |index| {
+                            Message::AppTheme(match index {
+                                1 => AppTheme::Dark,
+                                2 => AppTheme::Light,
+                                _ => AppTheme::System,
+                            })
+                        },
+                    ))
+                })
+                .into(),
             widget::settings::section()
                 .title(fl!("view"))
                 .add(
@@ -1809,6 +1938,133 @@ impl App {
                 .into(),
         ])
         .into()
+    }
+
+    fn view_pane_content(
+        &self,
+        id: pane_grid::Pane,
+        pane: &Pane,
+        size: Size,
+    ) -> Element<Message> {
+        let cosmic_theme::Spacing {
+            space_xxs, space_s, ..
+        } = theme::active().cosmic().spacing;
+
+        let mut tab_column = widget::column::with_capacity(4);
+
+        if pane.id == PaneType::LeftPane || pane.id == PaneType::RightPane {
+            if self.core.is_condensed() {
+                if let Some(term) = self.search_get() {
+                    tab_column = tab_column.push(
+                        widget::container(
+                            widget::text_input::search_input("", term)
+                                .width(Length::Fill)
+                                .id(self.search_id.clone())
+                                .on_clear(Message::SearchClear)
+                                .on_input(Message::SearchInput),
+                        )
+                        .padding(space_xxs),
+                    )
+                }
+            }
+            //if self.tab_model1.iter().count() > 1 && self.tab_model2.iter().count() > 1 {
+            if pane.id == PaneType::LeftPane {
+                tab_column = tab_column.push(
+                    widget::container(
+                        widget::tab_bar::horizontal(&self.tab_model1)
+                            .button_height(32)
+                            .button_spacing(space_xxs)
+                            .on_activate(|entity| Message::TabActivateLeftEntity(entity))
+                            .on_close(|entity| Message::TabCloseLeft(Some(entity)))
+                            .on_dnd_enter(|entity, _| Message::DndEnterTabLeft(entity))
+                            .on_dnd_leave(|_| Message::DndExitTabLeft)
+                            .on_dnd_drop(|entity, data, action| {
+                                Message::DndDropTabLeft(entity, data, action)
+                            })
+                            .drag_id(self.tab_drag_id_left),
+                    )
+                    .class(style::Container::Background)
+                    .width(Length::Fill)
+                    .padding([0, space_s]),
+                );
+                let entity_left = self.tab_model1.active();
+                let tab_view_left;
+                if let Some(tab) = self.tab_model1.data::<Tab>(entity_left) {
+                    tab_view_left = tab
+                        .view(&self.key_binds)
+                        .map(move |message| Message::TabMessage(Some(entity_left), message));
+                    tab_column = tab_column.push(tab_view_left)
+                }
+            } else if pane.id == PaneType::RightPane  {
+                tab_column = tab_column.push(
+                    widget::container(
+                        widget::tab_bar::horizontal(&self.tab_model2)
+                            .button_height(32)
+                            .button_spacing(space_xxs)
+                            .on_activate(|entity| Message::TabActivateRightEntity(entity))
+                            .on_close(|entity| Message::TabCloseRight(Some(entity)))
+                            .on_dnd_enter(|entity, _| Message::DndEnterTabRight(entity))
+                            .on_dnd_leave(|_| Message::DndExitTabRight)
+                            .on_dnd_drop(|entity, data, action| {
+                                Message::DndDropTabRight(entity, data, action)
+                            })
+                            .drag_id(self.tab_drag_id_right),
+                    )
+                    .class(style::Container::Background)
+                    .padding([0, space_s])
+                );
+                let entity_right = self.tab_model2.active();
+                let tab_view_right;
+                if let Some(tab) = self.tab_model2.data::<Tab>(entity_right) {
+                    tab_view_right = tab
+                        .view(&self.key_binds)
+                        .map(move |message| Message::TabMessage(Some(entity_right), message));
+                    tab_column = tab_column.push(tab_view_right)
+                }
+            }
+            // The toaster is added on top of an empty element to ensure that it does not override context menus
+            tab_column = tab_column.push(widget::toaster(&self.toasts, widget::horizontal_space()));
+        } else if pane.id == PaneType::ButtonPane {
+            tab_column = tab_column.push(
+                widget::row::with_children(vec![
+                    widget::button::text(fl!("f2-rename"))
+                        .on_press(Message::F2Rename).width(cosmic::iced::Length::Shrink)
+                        .into(),
+                    widget::button::text(fl!("f3-view"))
+                        .on_press(Message::F3View).width(cosmic::iced::Length::Shrink)
+                        .into(),
+                    widget::button::text(fl!("f4-edit"))
+                        .on_press(Message::F4Edit).width(cosmic::iced::Length::Shrink)
+                        .into(),
+                    widget::button::text(fl!("f5-copy"))
+                        .on_press(Message::F5Copy).width(cosmic::iced::Length::Shrink)
+                        .into(),
+                    widget::button::text(fl!("f6-move"))
+                        .on_press(Message::F6Move).width(cosmic::iced::Length::Shrink)
+                        .into(),
+                    widget::button::text(fl!("f7-mkdir"))
+                        .on_press(Message::F7Mkdir).width(cosmic::iced::Length::Shrink)
+                        .into(),
+                    widget::button::text(fl!("f7-mkdir"))
+                        .on_press(Message::F8Delete).width(cosmic::iced::Length::Shrink)
+                        .into(),
+                    widget::button::text(fl!("f9-Term"))
+                        .on_press(Message::F9Terminal).width(cosmic::iced::Length::Shrink)
+                        .into(),
+                    widget::button::text(fl!("f10-quit"))
+                        .on_press(Message::F10Quit).width(cosmic::iced::Length::Shrink)
+                        .into(),
+                ])
+                .width(Length::Fill),
+            )
+        } else {
+            // Terminal Alacritty
+        }
+        let content: Element<_> = tab_column.into();
+
+        // Uncomment to debug layout:
+        //content.explain(cosmic::iced::Color::WHITE)
+        content
     }
 }
 
@@ -1860,17 +2116,24 @@ impl Application for App {
         });
 
         let window_id_opt = core.main_window_id();
-
+        
+        let (panestates, panes, splits) = pane_setup(flags.config.show_button_row, flags.config.show_embedded_terminal, flags.config.show_second_panel);
+        let panes_created = panestates.len();
         let mut app = App {
             core,
             nav_bar_context_id: segmented_button::Entity::null(),
             nav_model: segmented_button::ModelBuilder::default().build(),
             tab_model1: segmented_button::ModelBuilder::default().build(),
             tab_model2: segmented_button::ModelBuilder::default().build(),
+            panes: Vec::new(),
+            splits: Vec::new(),
+            panestates,
+            panes_created,
+            focus: None,
             active_panel: 1,
-            show_button_row: true,
-            show_embedded_terminal: true,
-            show_second_panel: true,
+            show_button_row: flags.config.show_button_row,
+            show_embedded_terminal: flags.config.show_embedded_terminal,
+            show_second_panel: flags.config.show_second_panel,
             config_handler: flags.config_handler,
             config: flags.config,
             mode: flags.mode,
@@ -1930,10 +2193,18 @@ impl Application for App {
         }
         // restore previously opened tabs
         for i in 0..app.config.paths_left.len() {
-            commands.push(app.open_tab(Location::Path(PathBuf::from(&app.config.paths_left[i])), true, None));
+            commands.push(app.open_tab(
+                Location::Path(PathBuf::from(&app.config.paths_left[i])),
+                true,
+                None,
+            ));
         }
         for i in 0..app.config.paths_right.len() {
-            commands.push(app.open_tab_right(Location::Path(PathBuf::from(&app.config.paths_right[i])), true, None));
+            commands.push(app.open_tab_right(
+                Location::Path(PathBuf::from(&app.config.paths_right[i])),
+                true,
+                None,
+            ));
         }
         if app.config.paths_left.len() == 0 && flags.locations.len() == 0 {
             if let Ok(current_dir) = env::current_dir() {
@@ -2111,9 +2382,8 @@ impl Application for App {
             _ => {
                 log::error!("unknown panel used!");
                 None
-            },
+            }
         } {
-
             if tab.gallery {
                 tab.gallery = false;
                 return Task::none();
@@ -2138,9 +2408,8 @@ impl Application for App {
             _ => {
                 log::error!("unknown panel used!");
                 None
-            },
+            }
         } {
-    
             if tab.context_menu.is_some() {
                 tab.context_menu = None;
                 return Task::none();
@@ -2440,7 +2709,7 @@ impl Application for App {
                 } else {
                     entity = self.tab_model2.active();
                 }
-                self.update(Message::Rename(Some(entity)));
+                return self.update(Message::Rename(Some(entity)));
             }
             Message::F3View => {
                 let entity;
@@ -2449,7 +2718,7 @@ impl Application for App {
                 } else {
                     entity = self.tab_model2.active();
                 }
-                self.update(Message::Preview(Some(entity)));
+                return self.update(Message::Preview(Some(entity)));
             }
             Message::F4Edit => {
                 let entity;
@@ -2458,7 +2727,7 @@ impl Application for App {
                 } else {
                     entity = self.tab_model2.active();
                 }
-                self.update(Message::OpenWithDialog(Some(entity)));
+                return self.update(Message::OpenWithDialog(Some(entity)));
             }
             Message::F5Copy => {
                 let entity;
@@ -2477,7 +2746,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if let Some(path) = tab.location.path_opt() {
                         to = path.to_owned();
@@ -2487,11 +2756,8 @@ impl Application for App {
                 } else {
                     return Task::none();
                 }
-                
-                self.operation(Operation::Copy {
-                    paths,
-                    to,
-                });
+
+                self.operation(Operation::Copy { paths, to });
             }
             Message::F6Move => {
                 let entity;
@@ -2510,7 +2776,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if let Some(path) = tab.location.path_opt() {
                         to = path.to_owned();
@@ -2520,10 +2786,7 @@ impl Application for App {
                 } else {
                     return Task::none();
                 }
-                self.operation(Operation::Move {
-                    paths,
-                    to,
-                });
+                self.operation(Operation::Move { paths, to });
             }
             Message::F7Mkdir => {
                 let entity;
@@ -2623,17 +2886,19 @@ impl Application for App {
                         _ => {
                             log::error!("unknown panel used!");
                             Vec::new()
-                        },
+                        }
                     };
                     for entity in entities {
-                        let title_opt = match { match self.active_panel {
-                            1 => self.tab_model1.data_mut::<Tab>(entity),
-                            2 => self.tab_model2.data_mut::<Tab>(entity),
-                            _ => {
-                                log::error!("unknown panel used!");
-                                None
-                            },
-                        } } {
+                        let title_opt = match {
+                            match self.active_panel {
+                                1 => self.tab_model1.data_mut::<Tab>(entity),
+                                2 => self.tab_model2.data_mut::<Tab>(entity),
+                                _ => {
+                                    log::error!("unknown panel used!");
+                                    None
+                                }
+                            }
+                        } {
                             Some(tab) => {
                                 if unmounted.contains(&tab.location) {
                                     tab.change_location(&home_location, None);
@@ -2754,7 +3019,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if let Some(path) = &tab.location.path_opt() {
                         self.dialog_pages.push_back(DialogPage::NewItem {
@@ -2780,7 +3045,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         Vec::new()
-                    },
+                    }
                 };
                 for entity in entities {
                     if let Some(tab) = match self.active_panel {
@@ -2789,7 +3054,7 @@ impl Application for App {
                         _ => {
                             log::error!("unknown panel used!");
                             None
-                        },
+                        }
                     } {
                         if let Some(path) = &tab.location.path_opt() {
                             let mut contains_change = false;
@@ -2880,7 +3145,7 @@ impl Application for App {
                         _ => {
                             log::error!("unknown panel used!");
                             None
-                        },
+                        }
                     } {
                         if let Some(path) = &tab.location.path_opt() {
                             if let Some(items) = tab.items_opt() {
@@ -2996,7 +3261,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if let Some(items) = tab.items_opt() {
                         for item in items {
@@ -3026,6 +3291,82 @@ impl Application for App {
                     *selected = index;
                 }
             }
+            Message::PaneUpdate => {
+                let (panestates, panes, splits) = 
+                    pane_setup(self.show_button_row, self.show_embedded_terminal, self.show_second_panel);
+
+                self.panes_created = panestates.len();
+                self.panestates = panestates;
+                self.panes.clear();
+                self.panes.extend(panes);
+                self.splits.clear();
+                self.splits.extend(splits);
+            }
+            /*
+            Message::PaneSplitFocused(axis) => {
+                if let Some(pane) = self.focus {
+                    let result = self.panestates.split(
+                        axis,
+                        pane,
+                        Pane::new(self.panes_created),
+                    );
+
+                    if let Some((pane, _)) = result {
+                        self.focus = Some(pane);
+                    }
+
+                    self.panes_created += 1;
+                }
+            }
+            */
+            Message::PaneFocusAdjacent(direction) => {
+                if let Some(pane) = self.focus {
+                    if let Some(adjacent) = self.panestates.adjacent(pane, direction)
+                    {
+                        self.focus = Some(adjacent);
+                    }
+                }
+            }
+            Message::PaneClicked(pane) => {
+                self.focus = Some(pane);
+            }
+            Message::PaneResized(pane_grid::ResizeEvent { split, ratio }) => {
+                self.panestates.resize(split, ratio);
+            }
+            Message::PaneDragged(pane_grid::DragEvent::Dropped {
+                pane,
+                target,
+            }) => {
+                self.panestates.drop(pane, target);
+            }
+            Message::PaneDragged(_) => {}
+            Message::PaneTogglePin(pane) => {
+                if let Some(Pane { is_pinned, .. }) = self.panestates.get_mut(pane) {
+                    *is_pinned = !*is_pinned;
+                }
+            }
+            Message::PaneMaximize(pane) => self.panestates.maximize(pane),
+            Message::PaneRestore => {
+                self.panestates.restore();
+            }
+            /* 
+            Message::PaneClose(pane) => {
+                if let Some((_, sibling)) = self.panestates.close(pane) {
+                    self.focus = Some(sibling);
+                }
+            }
+            Message::PaneCloseFocused => {
+                if let Some(pane) = self.focus {
+                    if let Some(Pane { is_pinned, .. }) = self.panestates.get(pane) {
+                        if !is_pinned {
+                            if let Some((_, sibling)) = self.panestates.close(pane) {
+                                self.focus = Some(sibling);
+                            }
+                        }
+                    }
+                }
+            }
+            */
             Message::Paste(entity_opt) => {
                 let entity = match entity_opt {
                     Some(entity) => entity,
@@ -3043,7 +3384,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if let Some(path) = tab.location.path_opt() {
                         let to = path.clone();
@@ -3243,7 +3584,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if let Some(items) = tab.items_opt() {
                         let mut selected = Vec::new();
@@ -3315,7 +3656,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if let Some(items) = tab.items_opt() {
                         for item in items.iter() {
@@ -3415,23 +3756,27 @@ impl Application for App {
                 }
                 return self.update_title();
             }
-            Message::TabActivateLeft(entity) => {
+            Message::TabActivateLeft => {
                 self.active_panel = 1;
-                self.tab_model1.activate(entity);
-
-                if let Some(tab) = self.tab_model1.data::<Tab>(entity) {
-                    self.activate_nav_model_location(&tab.location.clone());
-                }
-                return self.update_title();
+                let entity = self.tab_model1.active();
+                
+                return self.update(Message::TabActivate(entity));
             }
-            Message::TabActivateRight(entity) => {
+            Message::TabActivateRight => {
                 self.active_panel = 2;
-                self.tab_model2.activate(entity);
-
-                if let Some(tab) = self.tab_model2.data::<Tab>(entity) {
-                    self.activate_nav_model_location(&tab.location.clone());
-                }
-                return self.update_title();
+                let entity = self.tab_model2.active();
+                
+                return self.update(Message::TabActivate(entity));
+            }
+            Message::TabActivateLeftEntity(entity) => {
+                self.active_panel = 1;
+                
+                return self.update(Message::TabActivate(entity));
+            }
+            Message::TabActivateRightEntity(entity) => {
+                self.active_panel = 2;
+                
+                return self.update(Message::TabActivate(entity));
             }
             Message::TabNext => {
                 if self.active_panel == 1 {
@@ -3531,14 +3876,14 @@ impl Application for App {
 
                     // Remove item
                     self.tab_model1.remove(entity);
-    
+
                     // If that was the last tab, close window
                     if self.tab_model1.iter().next().is_none() {
                         if let Some(window_id) = &self.window_id_opt {
                             return window::close(*window_id);
                         }
                     }
-                } else  {
+                } else {
                     if let Some(position) = self.tab_model2.position(entity) {
                         let new_position = if position > 0 {
                             position - 1
@@ -3557,7 +3902,7 @@ impl Application for App {
 
                     // Remove item
                     self.tab_model2.remove(entity);
-    
+
                     // If that was the last tab, close window
                     if self.tab_model2.iter().next().is_none() {
                         if let Some(window_id) = &self.window_id_opt {
@@ -3565,7 +3910,7 @@ impl Application for App {
                         }
                     }
                 }
-                // Activate closest item   
+                // Activate closest item
 
                 return Task::batch([self.update_title(), self.update_watcher()]);
             }
@@ -3573,7 +3918,7 @@ impl Application for App {
                 self.active_panel = 1;
                 let entity = match entity_opt {
                     Some(entity) => entity,
-                    None => self.tab_model1.active()
+                    None => self.tab_model1.active(),
                 };
                 if let Some(position) = self.tab_model1.position(entity) {
                     let new_position = if position > 0 {
@@ -3605,7 +3950,7 @@ impl Application for App {
                 self.active_panel = 2;
                 let entity = match entity_opt {
                     Some(entity) => entity,
-                    None => self.tab_model2.active()
+                    None => self.tab_model2.active(),
                 };
                 if let Some(position) = self.tab_model2.position(entity) {
                     let new_position = if position > 0 {
@@ -3678,7 +4023,7 @@ impl Application for App {
                         _ => {
                             log::error!("unknown panel used!");
                             None
-                        },
+                        }
                     }
                 } {
                     Some(tab) => tab.update(tab_message, self.modifiers),
@@ -3793,7 +4138,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         self.tab_model1.active()
-                    },    
+                    }
                 };
                 let location = match {
                     match self.active_panel {
@@ -3802,7 +4147,7 @@ impl Application for App {
                         _ => {
                             log::error!("unknown panel used!");
                             None
-                        },
+                        }
                     }
                 } {
                     Some(tab) => tab.location.clone(),
@@ -3817,7 +4162,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if location == tab.location {
                         tab.parent_item_opt = parent_item_opt;
@@ -3846,7 +4191,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     tab.config.view = view;
                 }
@@ -3936,7 +4281,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     tab.context_menu = None;
                 }
@@ -3968,7 +4313,7 @@ impl Application for App {
                 };
                 let mut config;
                 if self.active_panel == 1 {
-                   config = self.config.tab_left;
+                    config = self.config.tab_left;
                 } else {
                     config = self.config.tab_right;
                 }
@@ -3978,7 +4323,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     match tab.config.view {
                         tab::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
@@ -4014,7 +4359,7 @@ impl Application for App {
                 };
                 let mut config;
                 if self.active_panel == 1 {
-                   config = self.config.tab_left;
+                    config = self.config.tab_left;
                 } else {
                     config = self.config.tab_right;
                 }
@@ -4024,7 +4369,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     match tab.config.view {
                         tab::View::List => zoom_in(&mut config.icon_sizes.list, 50, 500),
@@ -4060,7 +4405,7 @@ impl Application for App {
                 };
                 let mut config;
                 if self.active_panel == 1 {
-                   config = self.config.tab_left;
+                    config = self.config.tab_left;
                 } else {
                     config = self.config.tab_right;
                 }
@@ -4070,7 +4415,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     match tab.config.view {
                         tab::View::List => zoom_out(&mut config.icon_sizes.list, 50, 500),
@@ -4125,20 +4470,22 @@ impl Application for App {
                     .is_some_and(|(loc, i)| *loc == location && i.elapsed() >= HOVER_DURATION)
                 {
                     self.nav_dnd_hover = None;
-                        let entity;
+                    let entity;
                     if self.active_panel == 1 {
                         entity = self.tab_model1.active();
                     } else {
                         entity = self.tab_model2.active();
                     }
-                    let title_opt = match { match self.active_panel {
-                        1 => self.tab_model1.data_mut::<Tab>(entity),
-                        2 => self.tab_model2.data_mut::<Tab>(entity),
-                        _ => {
-                            log::error!("unknown panel used!");
-                            None
-                        },
-                    } } {
+                    let title_opt = match {
+                        match self.active_panel {
+                            1 => self.tab_model1.data_mut::<Tab>(entity),
+                            2 => self.tab_model2.data_mut::<Tab>(entity),
+                            _ => {
+                                log::error!("unknown panel used!");
+                                None
+                            }
+                        }
+                    } {
                         Some(tab) => {
                             tab.change_location(&location, None);
                             Some(tab.title())
@@ -4202,8 +4549,10 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
-                }.zip(data) {
+                    }
+                }
+                .zip(data)
+                {
                     let kind = match action {
                         DndAction::Move => ClipboardKind::Cut,
                         _ => ClipboardKind::Copy,
@@ -4230,8 +4579,7 @@ impl Application for App {
             }
             Message::DndDropTabLeft(entity, data, action) => {
                 self.nav_dnd_hover = None;
-                if let Some((tab, data)) = 
-                        self.tab_model1.data::<Tab>(entity).zip(data) {
+                if let Some((tab, data)) = self.tab_model1.data::<Tab>(entity).zip(data) {
                     let kind = match action {
                         DndAction::Move => ClipboardKind::Cut,
                         _ => ClipboardKind::Copy,
@@ -4258,8 +4606,7 @@ impl Application for App {
             }
             Message::DndDropTabRight(entity, data, action) => {
                 self.nav_dnd_hover = None;
-                if let Some((tab, data)) = 
-                        self.tab_model2.data::<Tab>(entity).zip(data) {
+                if let Some((tab, data)) = self.tab_model2.data::<Tab>(entity).zip(data) {
                     let kind = match action {
                         DndAction::Move => ClipboardKind::Cut,
                         _ => ClipboardKind::Copy,
@@ -4328,7 +4675,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     tab.edit_location = None;
                 }
@@ -4616,7 +4963,7 @@ impl Application for App {
                     _ => {
                         log::error!("unknown panel used!");
                         None
-                    },
+                    }
                 } {
                     if let Some(items) = tab.items_opt() {
                         for item in items.iter() {
@@ -4657,7 +5004,7 @@ impl Application for App {
             _ => {
                 log::error!("unknown panel used!");
                 None
-            },
+            }
         } {
             if tab.gallery {
                 return Some(
@@ -5401,154 +5748,36 @@ impl Application for App {
             space_xxs, space_s, ..
         } = theme::active().cosmic().spacing;
 
-        let mut tab_column = widget::column::with_capacity(4);
+        let focus = self.focus;
+        //let total_panes = self.panes.len();
 
-        if self.core.is_condensed() {
-            if let Some(term) = self.search_get() {
-                tab_column = tab_column.push(
-                    widget::container(
-                        widget::text_input::search_input("", term)
-                            .width(Length::Fill)
-                            .id(self.search_id.clone())
-                            .on_clear(Message::SearchClear)
-                            .on_input(Message::SearchInput),
-                    )
-                    .padding(space_xxs),
-                )
-            }
-        }
-        //if self.tab_model1.iter().count() > 1 && self.tab_model2.iter().count() > 1 {
-            if !self.show_second_panel {
-                tab_column = tab_column.push(
-                    widget::container(
-                        widget::tab_bar::horizontal(&self.tab_model1)
-                            .button_height(32)
-                            .button_spacing(space_xxs)
-                            .on_activate(Message::TabActivateLeft)
-                            .on_close(|entity| Message::TabCloseLeft(Some(entity)))
-                            .on_dnd_enter(|entity, _| Message::DndEnterTabLeft(entity))
-                            .on_dnd_leave(|_| Message::DndExitTabLeft)
-                            .on_dnd_drop(|entity, data, action| {
-                                Message::DndDropTabLeft(entity, data, action)
-                            })
-                            .drag_id(self.tab_drag_id_left),
-                    )
-                    .class(style::Container::Background)
-                    .width(Length::Fill)
-                    .padding([0, space_s]),
-                );
-            } else {
-                tab_column = tab_column.push(
-                    widget::row::with_children(vec![
-                        widget::container(
-                            widget::tab_bar::horizontal(&self.tab_model1)
-                                .button_height(32)
-                                .button_spacing(space_xxs)
-                                .on_activate(Message::TabActivateLeft)
-                                .on_close(|entity| Message::TabCloseLeft(Some(entity)))
-                                .on_dnd_enter(|entity, _| Message::DndEnterTabLeft(entity))
-                                .on_dnd_leave(|_| Message::DndExitTabLeft)
-                                .on_dnd_drop(|entity, data, action| {
-                                    Message::DndDropTabLeft(entity, data, action)
-                                })
-                                .drag_id(self.tab_drag_id_left),
-                        )
-                        .class(style::Container::Background)
-                        .padding([0, space_s])
-                        .into(),
-                        widget::container(
-                            widget::tab_bar::horizontal(&self.tab_model2)
-                                .button_height(32)
-                                .button_spacing(space_xxs)
-                                .on_activate(Message::TabActivateRight)
-                                .on_close(|entity| Message::TabCloseRight(Some(entity)))
-                                .on_dnd_enter(|entity, _| Message::DndEnterTabRight(entity))
-                                .on_dnd_leave(|_| Message::DndExitTabRight)
-                                .on_dnd_drop(|entity, data, action| {
-                                    Message::DndDropTabRight(entity, data, action)
-                                })
-                                .drag_id(self.tab_drag_id_right),
-                        )
-                        .class(style::Container::Background)
-                        .padding([0, space_s])
-                        .into(),
-                    ])
-                )
-            }
-            if !self.show_second_panel {
-                let entity = self.tab_model1.active();
-                if let Some(tab) = self.tab_model1.data::<Tab>(entity) {
-                    let tab_view = tab
-                        .view(&self.key_binds)
-                        .map(move |message| Message::TabMessage(Some(entity), message));
-                    tab_column = tab_column.push(tab_view);
-                }
-            } else {
-                let entity_left = self.tab_model1.active();
-                let entity_right = self.tab_model2.active();
-                let tab_view_left;
-                let tab_view_right;
-                if let Some(tab) = self.tab_model1.data::<Tab>(entity_left) {
-                    tab_view_left = tab
-                        .view(&self.key_binds)
-                        .map(move |message| Message::TabMessage(Some(entity_left), message));
-                    if let Some(tab) = self.tab_model2.data::<Tab>(entity_right) {
-                        tab_view_right = tab
-                            .view(&self.key_binds)
-                            .map(move |message| Message::TabMessage(Some(entity_left), message));
-                        tab_column = tab_column.push(widget::row::with_children(vec![
-                            tab_view_left,
-                            tab_view_right
-                        ]).width(Length::Fill),
-                        );                    
-                    } else {
-                        let entity = self.tab_model1.active();
-                        if let Some(tab) = self.tab_model1.data::<Tab>(entity) {
-                            let tab_view = tab
-                                .view(&self.key_binds)
-                                .map(move |message| Message::TabMessage(Some(entity), message));
-                            tab_column = tab_column.push(tab_view);
-                        }
-                    }            
-                }
-            }
-        //}
-        // The toaster is added on top of an empty element to ensure that it does not override context menus
-        tab_column = tab_column.push(widget::toaster(&self.toasts, widget::horizontal_space()));
+        let pane_grid = 
+            PaneGrid::new(&self.panestates, |id, pane, is_maximized| {
+                //let is_focused = focus == Some(id);
+                
+                pane_grid::Content::new(cosmic::widget::responsive(move |size| {
+                    self.view_pane_content(id, pane, size)
+                }))
+                //.title_bar(title_bar)
+                //.style(if is_focused {
+                //    style::pane_focused
+                //} else {
+                //    style::pane_active
+                //})
+        })
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .spacing(space_s)
+        .on_click(Message::PaneClicked)
+        .on_drag(Message::PaneDragged)
+        .on_resize(10, Message::PaneResized);
 
-        if self.show_embedded_terminal {
-            /*
-            let mut terminal_box = terminal_box(self.terminal)
-            .id(terminal_id)
-            .on_context_menu(move |position_opt| {
-                Message::TabContextMenu(pane, position_opt)
-            })
-            .on_middle_click(move || Message::MiddleClick(pane, Some(entity_middle_click)))
-            .opacity(self.config.opacity_ratio())
+
+        widget::container(pane_grid)
+            .width(Length::Fill)
+            .height(Length::Fill)
             .padding(space_xxs)
-            .show_headerbar(self.config.show_headerbar);
-            */
-        }
-        if self.show_button_row {
-            tab_column = tab_column.push(
-                widget::row::with_children(vec![
-                    widget::button::text(fl!("f2-rename")).on_press(Message::F2Rename).into(),
-                    widget::button::text(fl!("f3-view")).on_press(Message::F3View).into(),
-                    widget::button::text(fl!("f4-edit")).on_press(Message::F4Edit).into(),
-                    widget::button::text(fl!("f5-copy")).on_press(Message::F5Copy).into(),
-                    widget::button::text(fl!("f6-move")).on_press(Message::F6Move).into(),
-                    widget::button::text(fl!("f7-mkdir")).on_press(Message::F7Mkdir).into(),
-                    widget::button::text(fl!("f7-mkdir")).on_press(Message::F8Delete).into(),
-                    widget::button::text(fl!("f9-Term")).on_press(Message::F9Terminal).into(),
-                    widget::button::text(fl!("f10-quit")).on_press(Message::F10Quit).into(),
-                ]).width(Length::Fill)
-            )
-        }
-        let content: Element<_> = tab_column.into();
-
-        // Uncomment to debug layout:
-        //content.explain(cosmic::iced::Color::WHITE)
-        content
+            .into()
     }
 
     fn view_window(&self, id: WindowId) -> Element<Self::Message> {
@@ -5556,15 +5785,16 @@ impl Application for App {
             Some(WindowKind::Desktop(entity)) => {
                 let mut tab_column = widget::column::with_capacity(3);
                 let entity = entity.to_owned();
-                let tab_view = match { 
+                let tab_view = match {
                     match self.active_panel {
-                    1 => self.tab_model1.data::<Tab>(entity),
-                    2 => self.tab_model2.data::<Tab>(entity),
-                    _ => {
-                        log::error!("unknown panel used!");
-                        None
-                    },
-                } } {
+                        1 => self.tab_model1.data::<Tab>(entity),
+                        2 => self.tab_model2.data::<Tab>(entity),
+                        _ => {
+                            log::error!("unknown panel used!");
+                            None
+                        }
+                    }
+                } {
                     Some(tab) => tab
                         .view(&self.key_binds)
                         .map(move |message| Message::TabMessage(Some(entity), message)),
@@ -5945,7 +6175,7 @@ impl Application for App {
             _ => {
                 log::error!("unknown panel used!");
                 Vec::new()
-            },
+            }
         };
         for entity in entities {
             if let Some(tab) = match self.active_panel {
@@ -5954,7 +6184,7 @@ impl Application for App {
                 _ => {
                     log::error!("unknown panel used!");
                     None
-                },
+                }
             } {
                 subscriptions.push(
                     tab.subscription(selected_preview == Some(entity))
@@ -5967,6 +6197,9 @@ impl Application for App {
         Subscription::batch(subscriptions)
     }
 }
+
+
+
 
 // Utilities to build a temporary file hierarchy for tests.
 //
