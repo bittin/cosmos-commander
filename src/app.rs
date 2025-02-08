@@ -18,7 +18,14 @@ use cosmic::{
     app::{self, context_drawer, message, Core, Task},
     cosmic_config, cosmic_theme, executor,
     iced::{
-        clipboard::dnd::DndAction, event, futures::{self, SinkExt}, id, keyboard::{Event as KeyEvent, Key, Modifiers}, stream, window::{self, Event as WindowEvent, Id as WindowId}, Alignment, Event, Length, Point, Rectangle, Size, Subscription
+        clipboard::dnd::DndAction,
+        event,
+        futures::{self, SinkExt},
+        id,
+        keyboard::{Event as KeyEvent, Key, Modifiers},
+        stream,
+        window::{self, Event as WindowEvent, Id as WindowId},
+        Alignment, Event, Length, Point, Rectangle, Size, Subscription,
     },
     iced_runtime::clipboard,
     style, theme,
@@ -165,15 +172,11 @@ impl Action {
             Action::CosmicSettingsWallpaper => Message::CosmicSettings("wallpaper"),
             Action::DesktopViewOptions => Message::DesktopViewOptions,
             Action::EditHistory => Message::ToggleContextPage(ContextPage::EditHistory),
-            Action::EditLocation => {
-                Message::TabMessage(entity_opt, tab::Message::EditLocationEnable)
-            }
-            Action::EmptyTrash => Message::TabMessage(None, tab::Message::EmptyTrash),
+            Action::EditLocation => Message::EditLocation(entity_opt),
+            Action::EmptyTrash => Message::EmptyTrash(entity_opt),
             Action::ExtractHere => Message::ExtractHere(entity_opt),
             #[cfg(feature = "desktop")]
-            Action::ExecEntryAction(action) => {
-                Message::TabMessage(entity_opt, tab::Message::ExecEntryAction(None, *action))
-            }
+            Action::ExecEntryAction(action) => Message::ExecEntryAction(entity_opt, *action),
             Action::F2Rename => Message::F2Rename,
             Action::F3View => Message::F3View,
             Action::F4Edit => Message::F4Edit,
@@ -183,18 +186,18 @@ impl Action {
             Action::F8Delete => Message::F8Delete,
             Action::F9Terminal => Message::F9Terminal,
             Action::F10Quit => Message::F10Quit,
-            Action::Gallery => Message::TabMessage(entity_opt, tab::Message::GalleryToggle),
-            Action::HistoryNext => Message::TabMessage(entity_opt, tab::Message::GoNext),
-            Action::HistoryPrevious => Message::TabMessage(entity_opt, tab::Message::GoPrevious),
-            Action::ItemDown => Message::TabMessage(entity_opt, tab::Message::ItemDown),
-            Action::ItemLeft => Message::TabMessage(entity_opt, tab::Message::ItemLeft),
-            Action::ItemRight => Message::TabMessage(entity_opt, tab::Message::ItemRight),
-            Action::ItemUp => Message::TabMessage(entity_opt, tab::Message::ItemUp),
-            Action::LocationUp => Message::TabMessage(entity_opt, tab::Message::LocationUp),
+            Action::Gallery => Message::GalleryToggle(entity_opt),
+            Action::HistoryNext => Message::HistoryNext(entity_opt),
+            Action::HistoryPrevious => Message::HistoryPrevious(entity_opt),
+            Action::ItemDown => Message::ItemDown(entity_opt),
+            Action::ItemLeft => Message::ItemLeft(entity_opt),
+            Action::ItemRight => Message::ItemRight(entity_opt),
+            Action::ItemUp => Message::ItemUp(entity_opt),
+            Action::LocationUp => Message::LocationUp(entity_opt),
             Action::MoveToTrash => Message::MoveToTrash(entity_opt),
             Action::NewFile => Message::NewItem(entity_opt, false),
             Action::NewFolder => Message::NewItem(entity_opt, true),
-            Action::Open => Message::TabMessage(entity_opt, tab::Message::Open(None)),
+            Action::Open => Message::Open(entity_opt),
             Action::OpenInNewTab => Message::OpenInNewTab(entity_opt),
             Action::OpenInNewWindow => Message::OpenInNewWindow(entity_opt),
             Action::OpenItemLocation => Message::OpenItemLocation(entity_opt),
@@ -205,12 +208,10 @@ impl Action {
             Action::Rename => Message::Rename(entity_opt),
             Action::RestoreFromTrash => Message::RestoreFromTrash(entity_opt),
             Action::SearchActivate => Message::SearchActivate,
-            Action::SelectAll => Message::TabMessage(entity_opt, tab::Message::SelectAll),
-            Action::SelectFirst => Message::TabMessage(entity_opt, tab::Message::SelectFirst),
-            Action::SelectLast => Message::TabMessage(entity_opt, tab::Message::SelectLast),
-            Action::SetSort(sort, dir) => {
-                Message::TabMessage(entity_opt, tab::Message::SetSort(*sort, *dir))
-            }
+            Action::SelectAll => Message::SelectAll(entity_opt),
+            Action::SelectFirst => Message::SelectFirst(entity_opt),
+            Action::SelectLast => Message::SelectLast(entity_opt),
+            Action::SetSort(sort, dir) => Message::SetSort(entity_opt, *sort, *dir),
             Action::Settings => Message::ToggleContextPage(ContextPage::Settings),
             Action::SwapPanels => Message::SwapPanels,
             Action::TabClose => Message::TabClose(entity_opt),
@@ -220,12 +221,8 @@ impl Action {
             Action::TabViewGrid => Message::TabView(entity_opt, tab::View::Grid),
             Action::TabViewList => Message::TabView(entity_opt, tab::View::List),
             Action::ToggleFoldersFirst => Message::ToggleFoldersFirst,
-            Action::ToggleShowHidden => {
-                Message::TabMessage(entity_opt, tab::Message::ToggleShowHidden)
-            }
-            Action::ToggleSort(sort) => {
-                Message::TabMessage(entity_opt, tab::Message::ToggleSort(*sort))
-            }
+            Action::ToggleShowHidden => Message::ToggleShowHidden(entity_opt),
+            Action::ToggleSort(sort) => Message::ToggleSort(entity_opt, *sort),
             Action::WindowClose => Message::WindowClose,
             Action::WindowNew => Message::WindowNew,
             Action::ZoomDefault => Message::ZoomDefault(entity_opt),
@@ -286,10 +283,14 @@ impl Pane {
 }
 
 fn pane_setup(
-    show_button_row: bool, 
-    show_embedded_terminal: bool, 
-    show_second_panel: bool
-) -> (pane_grid::State<Pane>, Vec<pane_grid::Pane>, Vec<pane_grid::Split>) {
+    show_button_row: bool,
+    show_embedded_terminal: bool,
+    show_second_panel: bool,
+) -> (
+    pane_grid::State<Pane>,
+    Vec<pane_grid::Pane>,
+    Vec<pane_grid::Split>,
+) {
     let mut panes = Vec::new();
     let mut splits = Vec::new();
     let mut panestates;
@@ -297,17 +298,29 @@ fn pane_setup(
     if show_button_row && show_embedded_terminal && show_second_panel {
         // full window
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((t, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::TerminalPane)) {
+        if let Some((t, s)) = panestates.split(
+            pane_grid::Axis::Horizontal,
+            pane,
+            Pane::new(PaneType::TerminalPane),
+        ) {
             panestates.resize(s, 0.75);
             splits.push(s);
-            if let Some((b, s)) = panestates.split(pane_grid::Axis::Horizontal, t, Pane::new(PaneType::ButtonPane)) {
+            if let Some((b, s)) = panestates.split(
+                pane_grid::Axis::Horizontal,
+                t,
+                Pane::new(PaneType::ButtonPane),
+            ) {
                 panestates.resize(s, 0.75);
                 panes.push(t);
                 splits.push(s);
                 panes.push(b);
-                if let Some((p, s)) = panestates.split(pane_grid::Axis::Vertical, pane, Pane::new(PaneType::RightPane)) {
+                if let Some((p, s)) = panestates.split(
+                    pane_grid::Axis::Vertical,
+                    pane,
+                    Pane::new(PaneType::RightPane),
+                ) {
                     splits.push(s);
-                    panes.push(p);    
+                    panes.push(p);
                     panes.push(pane);
                 }
             }
@@ -315,10 +328,18 @@ fn pane_setup(
     } else if show_button_row && show_embedded_terminal && !show_second_panel {
         // full window
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((t, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::TerminalPane)) {
+        if let Some((t, s)) = panestates.split(
+            pane_grid::Axis::Horizontal,
+            pane,
+            Pane::new(PaneType::TerminalPane),
+        ) {
             panestates.resize(s, 0.75);
             splits.push(s);
-            if let Some((b, s)) = panestates.split(pane_grid::Axis::Horizontal, t, Pane::new(PaneType::ButtonPane)) {
+            if let Some((b, s)) = panestates.split(
+                pane_grid::Axis::Horizontal,
+                t,
+                Pane::new(PaneType::ButtonPane),
+            ) {
                 panestates.resize(s, 0.75);
                 panes.push(t);
                 splits.push(s);
@@ -328,11 +349,19 @@ fn pane_setup(
         }
     } else if !show_button_row && show_embedded_terminal && show_second_panel {
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((p, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::TerminalPane)) {
+        if let Some((p, s)) = panestates.split(
+            pane_grid::Axis::Horizontal,
+            pane,
+            Pane::new(PaneType::TerminalPane),
+        ) {
             panestates.resize(s, 0.75);
             splits.push(s);
             panes.push(p);
-            if let Some((p, s)) = panestates.split(pane_grid::Axis::Vertical, pane, Pane::new(PaneType::RightPane)) {
+            if let Some((p, s)) = panestates.split(
+                pane_grid::Axis::Vertical,
+                pane,
+                Pane::new(PaneType::RightPane),
+            ) {
                 splits.push(s);
                 panes.push(p);
                 panes.push(pane);
@@ -340,19 +369,31 @@ fn pane_setup(
         }
     } else if show_button_row && !show_embedded_terminal && show_second_panel {
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((p, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::ButtonPane)) {
+        if let Some((p, s)) = panestates.split(
+            pane_grid::Axis::Horizontal,
+            pane,
+            Pane::new(PaneType::ButtonPane),
+        ) {
             panes.push(pane);
             panestates.resize(s, 0.95);
             splits.push(s);
             panes.push(p);
-            if let Some((p, s)) = panestates.split(pane_grid::Axis::Vertical, pane, Pane::new(PaneType::RightPane)) {
+            if let Some((p, s)) = panestates.split(
+                pane_grid::Axis::Vertical,
+                pane,
+                Pane::new(PaneType::RightPane),
+            ) {
                 splits.push(s);
                 panes.push(p);
             }
         }
     } else if !show_button_row && show_embedded_terminal && !show_second_panel {
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((p, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::TerminalPane)) {
+        if let Some((p, s)) = panestates.split(
+            pane_grid::Axis::Horizontal,
+            pane,
+            Pane::new(PaneType::TerminalPane),
+        ) {
             panes.push(pane);
             panestates.resize(s, 0.75);
             splits.push(s);
@@ -360,7 +401,11 @@ fn pane_setup(
         }
     } else if show_button_row && !show_embedded_terminal && !show_second_panel {
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((p, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::ButtonPane)) {
+        if let Some((p, s)) = panestates.split(
+            pane_grid::Axis::Horizontal,
+            pane,
+            Pane::new(PaneType::ButtonPane),
+        ) {
             panes.push(pane);
             panestates.resize(s, 0.95);
             splits.push(s);
@@ -368,7 +413,11 @@ fn pane_setup(
         }
     } else if !show_button_row && !show_embedded_terminal && show_second_panel {
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((p, s)) = panestates.split(pane_grid::Axis::Horizontal, pane, Pane::new(PaneType::RightPane)) {
+        if let Some((p, s)) = panestates.split(
+            pane_grid::Axis::Horizontal,
+            pane,
+            Pane::new(PaneType::RightPane),
+        ) {
             panes.push(pane);
             splits.push(s);
             panes.push(p);
@@ -417,6 +466,9 @@ pub enum Message {
     DialogPush(DialogPage),
     DialogUpdate(DialogPage),
     DialogUpdateComplete(DialogPage),
+    EditLocation(Option<Entity>),
+    EmptyTrash(Option<Entity>),
+    ExecEntryAction(Option<Entity>, usize),
     ExtractHere(Option<Entity>),
     F2Rename,
     F3View,
@@ -427,6 +479,14 @@ pub enum Message {
     F8Delete,
     F9Terminal,
     F10Quit,
+    GalleryToggle(Option<Entity>),
+    HistoryNext(Option<Entity>),
+    HistoryPrevious(Option<Entity>),
+    ItemDown(Option<Entity>),
+    ItemLeft(Option<Entity>),
+    ItemRight(Option<Entity>),
+    ItemUp(Option<Entity>),
+    LocationUp(Option<Entity>),
     Key(Modifiers, Key),
     LaunchUrl(String),
     MaybeExit,
@@ -446,6 +506,9 @@ pub enum Message {
     Notification(Arc<Mutex<notify_rust::NotificationHandle>>),
     NotifyEvents(Vec<DebouncedEvent>),
     NotifyWatcher(WatcherWrapper),
+    NotifyWatcherLeft(WatcherWrapper),
+    NotifyWatcherRight(WatcherWrapper),
+    Open(Option<Entity>),
     OpenTerminal(Option<Entity>),
     OpenInNewTab(Option<Entity>),
     OpenInNewWindow(Option<Entity>),
@@ -484,6 +547,10 @@ pub enum Message {
     SearchActivate,
     SearchClear,
     SearchInput(String),
+    SelectAll(Option<Entity>),
+    SelectFirst(Option<Entity>),
+    SelectLast(Option<Entity>),
+    SetSort(Option<Entity>, HeadingOptions, bool),
     SetShowDetails(bool),
     ShowButtonRow(bool),
     ShowEmbeddedTerminal(bool),
@@ -504,8 +571,23 @@ pub enum Message {
     TabCloseRight(Option<Entity>),
     TabConfig(TabConfig),
     TabMessage(Option<Entity>, tab::Message),
+    TabMessageRight(Option<Entity>, tab::Message),
     TabNew,
     TabRescan(
+        Entity,
+        Location,
+        Option<tab::Item>,
+        Vec<tab::Item>,
+        Option<Vec<PathBuf>>,
+    ),
+    TabRescanLeft(
+        Entity,
+        Location,
+        Option<tab::Item>,
+        Vec<tab::Item>,
+        Option<Vec<PathBuf>>,
+    ),
+    TabRescanRight(
         Entity,
         Location,
         Option<tab::Item>,
@@ -515,6 +597,8 @@ pub enum Message {
     TabView(Option<Entity>, tab::View),
     ToggleContextPage(ContextPage),
     ToggleFoldersFirst,
+    ToggleShowHidden(Option<Entity>),
+    ToggleSort(Option<Entity>, HeadingOptions),
     Undo(usize),
     UndoTrash(widget::ToastId, Arc<[PathBuf]>),
     UndoTrashStart(Vec<TrashItem>),
@@ -723,7 +807,8 @@ pub struct App {
     #[cfg(feature = "wayland")]
     surface_names: HashMap<WindowId, String>,
     toasts: widget::toaster::Toasts<Message>,
-    watcher_opt: Option<(Debouncer<RecommendedWatcher, FileIdMap>, HashSet<PathBuf>)>,
+    watcher_opt_left: Option<(Debouncer<RecommendedWatcher, FileIdMap>, HashSet<PathBuf>)>,
+    watcher_opt_right: Option<(Debouncer<RecommendedWatcher, FileIdMap>, HashSet<PathBuf>)>,
     window_id_opt: Option<window::Id>,
     windows: HashMap<window::Id, WindowKind>,
     nav_dnd_hover: Option<(Location, Instant)>,
@@ -1084,7 +1169,11 @@ impl App {
         if let Location::Search(_, term, ..) = location {
             self.search_set(entity, Some(term), selection_paths)
         } else {
-            self.rescan_tab(entity, location, selection_paths)
+            if self.active_panel == 1 {
+                self.rescan_tab_left(entity, location, selection_paths)
+            } else {
+                self.rescan_tab_right(entity, location, selection_paths)
+            }
         }
     }
 
@@ -1105,7 +1194,67 @@ impl App {
             async move {
                 let location2 = location.clone();
                 match tokio::task::spawn_blocking(move || location2.scan(icon_sizes)).await {
-                    Ok((parent_item_opt, items)) => message::app(Message::TabRescan(
+                    Ok((parent_item_opt, items)) => message::app(Message::TabRescanLeft(
+                        entity,
+                        location,
+                        parent_item_opt,
+                        items,
+                        selection_paths,
+                    )),
+                    Err(err) => {
+                        log::warn!("failed to rescan: {}", err);
+                        message::none()
+                    }
+                }
+            },
+            |x| x,
+        )
+    }
+
+    fn rescan_tab_left(
+        &mut self,
+        entity: Entity,
+        location: Location,
+        selection_paths: Option<Vec<PathBuf>>,
+    ) -> Task<Message> {
+        log::info!("rescan_tab {entity:?} {location:?} {selection_paths:?}");
+        let icon_sizes;
+        icon_sizes = self.config.tab_left.icon_sizes;
+        Task::perform(
+            async move {
+                let location2 = location.clone();
+                match tokio::task::spawn_blocking(move || location2.scan(icon_sizes)).await {
+                    Ok((parent_item_opt, items)) => message::app(Message::TabRescanLeft(
+                        entity,
+                        location,
+                        parent_item_opt,
+                        items,
+                        selection_paths,
+                    )),
+                    Err(err) => {
+                        log::warn!("failed to rescan: {}", err);
+                        message::none()
+                    }
+                }
+            },
+            |x| x,
+        )
+    }
+
+    fn rescan_tab_right(
+        &mut self,
+        entity: Entity,
+        location: Location,
+        selection_paths: Option<Vec<PathBuf>>,
+    ) -> Task<Message> {
+        log::info!("rescan_tab {entity:?} {location:?} {selection_paths:?}");
+        let icon_sizes;
+        icon_sizes = self.config.tab_right.icon_sizes;
+        Task::perform(
+            async move {
+                let location2 = location.clone();
+                match tokio::task::spawn_blocking(move || location2.scan(icon_sizes)).await {
+                    Ok((parent_item_opt, items)) => message::app(Message::TabRescanRight(
                         entity,
                         location,
                         parent_item_opt,
@@ -1304,7 +1453,7 @@ impl App {
                 self.config.app_theme.theme(),
             ))
             .chain(tabs.into_iter().map(|entity| {
-                self.update(Message::TabMessage(
+                self.update(Message::TabMessageRight(
                     Some(entity),
                     tab::Message::Config(self.config.tab_right),
                 ))
@@ -1523,73 +1672,89 @@ impl App {
     }
 
     fn update_watcher(&mut self) -> Task<Message> {
-        if let Some((mut watcher, old_paths)) = self.watcher_opt.take() {
-            let mut new_paths = HashSet::new();
-            let entities: Vec<_> = match self.active_panel {
-                1 => self.tab_model1.iter().collect(),
-                2 => self.tab_model2.iter().collect(),
-                _ => {
-                    log::error!("unknown panel used!");
-                    Vec::new()
-                }
-            };
-            for entity in entities {
-                if let Some(tab) = match self.active_panel {
-                    1 => self.tab_model1.data::<Tab>(entity),
-                    2 => self.tab_model2.data::<Tab>(entity),
+        //let mut watcher: Debouncer<INotifyWatcher, FileIdMap>;
+        //let mut old_paths;
+        match match self.active_panel {
+            1 => self.watcher_opt_left.take(),
+            2 => self.watcher_opt_right.take(),
+            _ => {
+                log::error!("unknown panel used!");
+                None
+            }
+        } {
+            Some((mut watcher, old_paths)) => {
+                let mut new_paths = HashSet::new();
+                let entities: Vec<_> = match self.active_panel {
+                    1 => self.tab_model1.iter().collect(),
+                    2 => self.tab_model2.iter().collect(),
                     _ => {
                         log::error!("unknown panel used!");
-                        None
+                        Vec::new()
                     }
-                } {
-                    if let Some(path) = tab.location.path_opt() {
-                        new_paths.insert(path.to_path_buf());
-                    }
-                }
-            }
-
-            // Unwatch paths no longer used
-            for path in old_paths.iter() {
-                if !new_paths.contains(path) {
-                    match watcher.watcher().unwatch(path) {
-                        Ok(()) => {
-                            log::debug!("unwatching {:?}", path);
+                };
+                for entity in entities {
+                    if let Some(tab) = match self.active_panel {
+                        1 => self.tab_model1.data::<Tab>(entity),
+                        2 => self.tab_model2.data::<Tab>(entity),
+                        _ => {
+                            log::error!("unknown panel used!");
+                            None
                         }
-                        Err(err) => {
-                            log::debug!("failed to unwatch {:?}: {}", path, err);
+                    } {
+                        if let Some(path) = tab.location.path_opt() {
+                            new_paths.insert(path.to_path_buf());
                         }
                     }
                 }
-            }
 
-            // Watch new paths
-            for path in new_paths.iter() {
-                if !old_paths.contains(path) {
-                    //TODO: should this be recursive?
-                    match watcher
-                        .watcher()
-                        .watch(path, notify::RecursiveMode::NonRecursive)
-                    {
-                        Ok(()) => {
-                            log::debug!("watching {:?}", path);
-                        }
-                        Err(err) => {
-                            log::debug!("failed to watch {:?}: {}", path, err);
+                // Unwatch paths no longer used
+                for path in old_paths.iter() {
+                    if !new_paths.contains(path) {
+                        match watcher.watcher().unwatch(path) {
+                            Ok(()) => {
+                                log::debug!("unwatching {:?}", path);
+                            }
+                            Err(err) => {
+                                log::debug!("failed to unwatch {:?}: {}", path, err);
+                            }
                         }
                     }
                 }
-            }
 
-            self.watcher_opt = Some((watcher, new_paths));
+                // Watch new paths
+                for path in new_paths.iter() {
+                    if !old_paths.contains(path) {
+                        //TODO: should this be recursive?
+                        match watcher
+                            .watcher()
+                            .watch(path, notify::RecursiveMode::NonRecursive)
+                        {
+                            Ok(()) => {
+                                log::debug!("watching {:?}", path);
+                            }
+                            Err(err) => {
+                                log::debug!("failed to watch {:?}: {}", path, err);
+                            }
+                        }
+                    }
+                }
+                if self.active_panel == 1 {
+                    self.watcher_opt_left = Some((watcher, new_paths));
+                } else {
+                    self.watcher_opt_right = Some((watcher, new_paths));
+                }
+            }
+            None => {
+                log::error!("Failed to open the previous watcher!");
+            }
         }
-
         //TODO: should any of this run in a command?
         Task::none()
     }
 
     fn about(&self) -> Element<Message> {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
-        let repository = "https://github.com/pop-os/cosmic-commander";
+        let repository = "https://github.com/fangornsrealm/cosmic-commander";
         let hash = env!("VERGEN_GIT_SHA");
         let short_hash: String = hash.chars().take(7).collect();
         let date = env!("VERGEN_GIT_COMMIT_DATE");
@@ -1940,19 +2105,13 @@ impl App {
         .into()
     }
 
-    fn view_pane_content(
-        &self,
-        id: pane_grid::Pane,
-        pane: &Pane,
-        size: Size,
-    ) -> Element<Message> {
+    fn view_pane_content(&self, id: pane_grid::Pane, pane: &Pane, size: Size) -> Element<Message> {
         let cosmic_theme::Spacing {
             space_xxs, space_s, ..
         } = theme::active().cosmic().spacing;
 
-        let mut tab_column = widget::column::with_capacity(4);
-
         if pane.id == PaneType::LeftPane || pane.id == PaneType::RightPane {
+            let mut tab_column = widget::column::with_capacity(4);
             if self.core.is_condensed() {
                 if let Some(term) = self.search_get() {
                     tab_column = tab_column.push(
@@ -1988,14 +2147,13 @@ impl App {
                     .padding([0, space_s]),
                 );
                 let entity_left = self.tab_model1.active();
-                let tab_view_left;
                 if let Some(tab) = self.tab_model1.data::<Tab>(entity_left) {
-                    tab_view_left = tab
+                    let tab_view_left = tab
                         .view(&self.key_binds)
                         .map(move |message| Message::TabMessage(Some(entity_left), message));
                     tab_column = tab_column.push(tab_view_left)
                 }
-            } else if pane.id == PaneType::RightPane  {
+            } else if pane.id == PaneType::RightPane {
                 tab_column = tab_column.push(
                     widget::container(
                         widget::tab_bar::horizontal(&self.tab_model2)
@@ -2011,60 +2169,85 @@ impl App {
                             .drag_id(self.tab_drag_id_right),
                     )
                     .class(style::Container::Background)
-                    .padding([0, space_s])
+                    .padding([0, space_s]),
                 );
                 let entity_right = self.tab_model2.active();
-                let tab_view_right;
                 if let Some(tab) = self.tab_model2.data::<Tab>(entity_right) {
-                    tab_view_right = tab
+                    let tab_view_right = tab
                         .view(&self.key_binds)
-                        .map(move |message| Message::TabMessage(Some(entity_right), message));
+                        .map(move |message| Message::TabMessageRight(Some(entity_right), message));
                     tab_column = tab_column.push(tab_view_right)
                 }
             }
             // The toaster is added on top of an empty element to ensure that it does not override context menus
             tab_column = tab_column.push(widget::toaster(&self.toasts, widget::horizontal_space()));
+            let content: Element<_> = tab_column.into();
+
+            // Uncomment to debug layout:
+            //content.explain(cosmic::iced::Color::WHITE)
+            return content;
         } else if pane.id == PaneType::ButtonPane {
-            tab_column = tab_column.push(
-                widget::row::with_children(vec![
-                    widget::button::text(fl!("f2-rename"))
-                        .on_press(Message::F2Rename).width(cosmic::iced::Length::Shrink)
-                        .into(),
-                    widget::button::text(fl!("f3-view"))
-                        .on_press(Message::F3View).width(cosmic::iced::Length::Shrink)
-                        .into(),
-                    widget::button::text(fl!("f4-edit"))
-                        .on_press(Message::F4Edit).width(cosmic::iced::Length::Shrink)
-                        .into(),
-                    widget::button::text(fl!("f5-copy"))
-                        .on_press(Message::F5Copy).width(cosmic::iced::Length::Shrink)
-                        .into(),
-                    widget::button::text(fl!("f6-move"))
-                        .on_press(Message::F6Move).width(cosmic::iced::Length::Shrink)
-                        .into(),
-                    widget::button::text(fl!("f7-mkdir"))
-                        .on_press(Message::F7Mkdir).width(cosmic::iced::Length::Shrink)
-                        .into(),
-                    widget::button::text(fl!("f7-mkdir"))
-                        .on_press(Message::F8Delete).width(cosmic::iced::Length::Shrink)
-                        .into(),
-                    widget::button::text(fl!("f9-Term"))
-                        .on_press(Message::F9Terminal).width(cosmic::iced::Length::Shrink)
-                        .into(),
-                    widget::button::text(fl!("f10-quit"))
-                        .on_press(Message::F10Quit).width(cosmic::iced::Length::Shrink)
-                        .into(),
-                ])
-                .width(Length::Fill),
-            )
+            let tab_column = widget::row::with_children(vec![
+                widget::button::text(fl!("f2-rename"))
+                    .on_press(Message::F2Rename)
+                    .width(cosmic::iced::Length::Shrink)
+                    .into(),
+                widget::horizontal_space().into(),
+                widget::button::text(fl!("f3-view"))
+                    .on_press(Message::F3View)
+                    .width(cosmic::iced::Length::Shrink)
+                    .into(),
+                widget::horizontal_space().into(),
+                widget::button::text(fl!("f4-edit"))
+                    .on_press(Message::F4Edit)
+                    .width(cosmic::iced::Length::Shrink)
+                    .into(),
+                widget::horizontal_space().into(),
+                widget::button::text(fl!("f5-copy"))
+                    .on_press(Message::F5Copy)
+                    .width(cosmic::iced::Length::Shrink)
+                    .into(),
+                widget::horizontal_space().into(),
+                widget::button::text(fl!("f6-move"))
+                    .on_press(Message::F6Move)
+                    .width(cosmic::iced::Length::Shrink)
+                    .into(),
+                widget::horizontal_space().into(),
+                widget::button::text(fl!("f7-mkdir"))
+                    .on_press(Message::F7Mkdir)
+                    .width(cosmic::iced::Length::Shrink)
+                    .into(),
+                widget::horizontal_space().into(),
+                widget::button::text(fl!("f7-mkdir"))
+                    .on_press(Message::F8Delete)
+                    .width(cosmic::iced::Length::Shrink)
+                    .into(),
+                widget::horizontal_space().into(),
+                widget::button::text(fl!("f9-Term"))
+                    .on_press(Message::F9Terminal)
+                    .width(cosmic::iced::Length::Shrink)
+                    .into(),
+                widget::horizontal_space().into(),
+                widget::button::text(fl!("f10-quit"))
+                    .on_press(Message::F10Quit)
+                    .width(cosmic::iced::Length::Shrink)
+                    .into(),
+            ])
+            .width(Length::Fill);
+            let content: Element<_> = tab_column.into();
+
+            // Uncomment to debug layout:
+            //content.explain(cosmic::iced::Color::WHITE)
+            return content;
         } else {
             // Terminal Alacritty
-        }
-        let content: Element<_> = tab_column.into();
+            let tab_column = widget::row::with_children(vec![]).width(Length::Fill);
+            let content: Element<_> = tab_column.into();
 
-        // Uncomment to debug layout:
-        //content.explain(cosmic::iced::Color::WHITE)
-        content
+            // Uncomment to debug layout:
+            //content.explain(cosmic::iced::Color::WHITE)
+            return content;
+        }
     }
 }
 
@@ -2116,8 +2299,12 @@ impl Application for App {
         });
 
         let window_id_opt = core.main_window_id();
-        
-        let (panestates, panes, splits) = pane_setup(flags.config.show_button_row, flags.config.show_embedded_terminal, flags.config.show_second_panel);
+
+        let (panestates, panes, splits) = pane_setup(
+            flags.config.show_button_row,
+            flags.config.show_embedded_terminal,
+            flags.config.show_second_panel,
+        );
         let panes_created = panestates.len();
         let mut app = App {
             core,
@@ -2163,7 +2350,8 @@ impl Application for App {
             #[cfg(feature = "wayland")]
             surface_names: HashMap::new(),
             toasts: widget::toaster::Toasts::new(Message::CloseToast),
-            watcher_opt: None,
+            watcher_opt_left: None,
+            watcher_opt_right: None,
             window_id_opt,
             windows: HashMap::new(),
             nav_dnd_hover: None,
@@ -2220,7 +2408,7 @@ impl Application for App {
                 commands.push(app.open_tab_right(Location::Path(home_dir()), true, None));
             }
         }
-
+        app.core.nav_bar_set_toggled(false);
         (app, Task::batch(commands))
     }
 
@@ -2333,8 +2521,14 @@ impl Application for App {
     fn on_nav_select(&mut self, entity: Entity) -> Task<Self::Message> {
         self.nav_model.activate(entity);
         if let Some(location) = self.nav_model.data::<Location>(entity) {
-            let message = Message::TabMessage(None, tab::Message::Location(location.clone()));
-            return self.update(message);
+            if self.active_panel == 1 {
+                let message = Message::TabMessage(None, tab::Message::Location(location.clone()));
+                return self.update(message);
+            } else {
+                let message =
+                    Message::TabMessageRight(None, tab::Message::Location(location.clone()));
+                return self.update(message);
+            }
         }
 
         if let Some(data) = self.nav_model.data::<MounterData>(entity) {
@@ -2689,6 +2883,42 @@ impl Application for App {
                     self.update(Message::DialogComplete),
                 ]);
             }
+            Message::EditLocation(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(
+                        entity_opt,
+                        tab::Message::EditLocationEnable,
+                    ));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::EditLocationEnable,
+                    ));
+                }
+            }
+            Message::EmptyTrash(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::EmptyTrash));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::EmptyTrash,
+                    ));
+                }
+            }
+            Message::ExecEntryAction(entity_opt, action) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(
+                        entity_opt,
+                        tab::Message::ExecEntryAction(None, action),
+                    ));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::ExecEntryAction(None, action),
+                    ));
+                }
+            }
             Message::ExtractHere(entity_opt) => {
                 let paths = self.selected_paths(entity_opt);
                 if let Some(destination) = paths
@@ -2818,6 +3048,67 @@ impl Application for App {
             Message::F10Quit => {
                 return self.update(Message::WindowClose);
             }
+            Message::GalleryToggle(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self
+                        .update(Message::TabMessage(entity_opt, tab::Message::GalleryToggle));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::GalleryToggle,
+                    ));
+                }
+            }
+            Message::HistoryNext(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::GoNext));
+                } else {
+                    return self.update(Message::TabMessageRight(entity_opt, tab::Message::GoNext));
+                }
+            }
+            Message::HistoryPrevious(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::GoPrevious));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::GoPrevious,
+                    ));
+                }
+            }
+            Message::ItemDown(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::ItemDown));
+                } else {
+                    return self
+                        .update(Message::TabMessageRight(entity_opt, tab::Message::ItemDown));
+                }
+            }
+            Message::ItemLeft(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::ItemLeft));
+                } else {
+                    return self
+                        .update(Message::TabMessageRight(entity_opt, tab::Message::ItemLeft));
+                }
+            }
+            Message::ItemRight(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::ItemRight));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::ItemRight,
+                    ));
+                }
+            }
+            Message::ItemUp(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::ItemUp));
+                } else {
+                    return self.update(Message::TabMessageRight(entity_opt, tab::Message::ItemUp));
+                }
+            }
             Message::Key(modifiers, key) => {
                 let entity;
                 if self.active_panel == 1 {
@@ -2829,6 +3120,16 @@ impl Application for App {
                     if key_bind.matches(modifiers, &key) {
                         return self.update(action.message(Some(entity)));
                     }
+                }
+            }
+            Message::LocationUp(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::LocationUp));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::LocationUp,
+                    ));
                 }
             }
             Message::MaybeExit => {
@@ -3119,13 +3420,48 @@ impl Application for App {
             Message::NotifyWatcher(mut watcher_wrapper) => match watcher_wrapper.watcher_opt.take()
             {
                 Some(watcher) => {
-                    self.watcher_opt = Some((watcher, HashSet::new()));
+                    if self.active_panel == 1 {
+                        self.watcher_opt_left = Some((watcher, HashSet::new()));
+                        return self.update_watcher();
+                    } else {
+                        self.watcher_opt_right = Some((watcher, HashSet::new()));
+                        return self.update_watcher();
+                    }
+                }
+                None => {
+                    log::warn!("message did not contain notify watcher");
+                }
+            },
+            Message::NotifyWatcherLeft(mut watcher_wrapper) => match watcher_wrapper.watcher_opt.take()
+            {
+                Some(watcher) => {
+                    self.watcher_opt_left = Some((watcher, HashSet::new()));
                     return self.update_watcher();
                 }
                 None => {
                     log::warn!("message did not contain notify watcher");
                 }
             },
+            Message::NotifyWatcherRight(mut watcher_wrapper) => match watcher_wrapper.watcher_opt.take()
+            {
+                Some(watcher) => {
+                    self.watcher_opt_right = Some((watcher, HashSet::new()));
+                    return self.update_watcher();
+                }
+                None => {
+                    log::warn!("message did not contain notify watcher");
+                }
+            },
+            Message::Open(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::Open(None)));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::Open(None),
+                    ));
+                }
+            }
             Message::OpenTerminal(entity_opt) => {
                 if let Some(terminal) = self.mime_app_cache.terminal() {
                     let mut paths = Vec::new();
@@ -3183,15 +3519,21 @@ impl Application for App {
                 }
             }
             Message::OpenInNewTab(entity_opt) => {
-                return Task::batch(self.selected_paths(entity_opt).into_iter().filter_map(
+                let commands = Task::batch(self.selected_paths(entity_opt).into_iter().filter_map(
                     |path| {
                         if path.is_dir() {
-                            Some(self.open_tab(Location::Path(path), false, None))
+                            if self.active_panel == 1 {
+                                Some(self.open_tab(Location::Path(path), false, None))
+                            } else {
+                                Some(self.open_tab_right(Location::Path(path), false, None))
+                            }
                         } else {
                             None
                         }
                     },
-                ))
+                ));
+                let _ = self.update(Message::StoreOpenPaths);
+                return commands;
             }
             Message::OpenInNewWindow(entity_opt) => match env::current_exe() {
                 Ok(exe) => self
@@ -3292,8 +3634,11 @@ impl Application for App {
                 }
             }
             Message::PaneUpdate => {
-                let (panestates, panes, splits) = 
-                    pane_setup(self.show_button_row, self.show_embedded_terminal, self.show_second_panel);
+                let (panestates, panes, splits) = pane_setup(
+                    self.show_button_row,
+                    self.show_embedded_terminal,
+                    self.show_second_panel,
+                );
 
                 self.panes_created = panestates.len();
                 self.panestates = panestates;
@@ -3321,22 +3666,26 @@ impl Application for App {
             */
             Message::PaneFocusAdjacent(direction) => {
                 if let Some(pane) = self.focus {
-                    if let Some(adjacent) = self.panestates.adjacent(pane, direction)
-                    {
+                    if let Some(adjacent) = self.panestates.adjacent(pane, direction) {
                         self.focus = Some(adjacent);
                     }
                 }
             }
             Message::PaneClicked(pane) => {
+                if let Some(p) = self.panestates.get(pane) {
+                    match p.id {
+                        PaneType::LeftPane => self.active_panel = 1,
+                        PaneType::RightPane => self.active_panel = 2,
+                        _ => {}
+                    }
+                }
+
                 self.focus = Some(pane);
             }
             Message::PaneResized(pane_grid::ResizeEvent { split, ratio }) => {
                 self.panestates.resize(split, ratio);
             }
-            Message::PaneDragged(pane_grid::DragEvent::Dropped {
-                pane,
-                target,
-            }) => {
+            Message::PaneDragged(pane_grid::DragEvent::Dropped { pane, target }) => {
                 self.panestates.drop(pane, target);
             }
             Message::PaneDragged(_) => {}
@@ -3349,7 +3698,7 @@ impl Application for App {
             Message::PaneRestore => {
                 self.panestates.restore();
             }
-            /* 
+            /*
             Message::PaneClose(pane) => {
                 if let Some((_, sibling)) = self.panestates.close(pane) {
                     self.focus = Some(sibling);
@@ -3690,6 +4039,49 @@ impl Application for App {
             Message::SearchInput(input) => {
                 return self.search_set_active(Some(input));
             }
+            Message::SelectAll(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::SelectAll));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::SelectAll,
+                    ));
+                }
+            }
+            Message::SelectFirst(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::SelectFirst));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::SelectFirst,
+                    ));
+                }
+            }
+            Message::SelectLast(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(entity_opt, tab::Message::SelectLast));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::SelectLast,
+                    ));
+                }
+            }
+            Message::SetSort(entity_opt, sort, dir) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(
+                        entity_opt,
+                        tab::Message::SetSort(sort, dir),
+                    ));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::SetSort(sort, dir),
+                    ));
+                }
+            }
             Message::SetShowDetails(show_details) => {
                 config_set!(show_details, show_details);
                 return self.update_config();
@@ -3759,23 +4151,23 @@ impl Application for App {
             Message::TabActivateLeft => {
                 self.active_panel = 1;
                 let entity = self.tab_model1.active();
-                
+
                 return self.update(Message::TabActivate(entity));
             }
             Message::TabActivateRight => {
                 self.active_panel = 2;
                 let entity = self.tab_model2.active();
-                
+
                 return self.update(Message::TabActivate(entity));
             }
             Message::TabActivateLeftEntity(entity) => {
                 self.active_panel = 1;
-                
+
                 return self.update(Message::TabActivate(entity));
             }
             Message::TabActivateRightEntity(entity) => {
                 self.active_panel = 2;
-                
+
                 return self.update(Message::TabActivate(entity));
             }
             Message::TabNext => {
@@ -3911,7 +4303,7 @@ impl Application for App {
                     }
                 }
                 // Activate closest item
-
+                let _ = self.update(Message::StoreOpenPaths);
                 return Task::batch([self.update_title(), self.update_watcher()]);
             }
             Message::TabCloseLeft(entity_opt) => {
@@ -3945,6 +4337,7 @@ impl Application for App {
                         return window::close(*window_id);
                     }
                 }
+                let _ = self.update(Message::StoreOpenPaths);
             }
             Message::TabCloseRight(entity_opt) => {
                 self.active_panel = 2;
@@ -3977,6 +4370,7 @@ impl Application for App {
                         return window::close(*window_id);
                     }
                 }
+                let _ = self.update(Message::StoreOpenPaths);
             }
             Message::TabConfig(config) => {
                 if self.active_panel == 1 {
@@ -3998,16 +4392,36 @@ impl Application for App {
                 config.folders_first = !config.folders_first;
                 return self.update(Message::TabConfig(config));
             }
+            Message::ToggleShowHidden(entity_opt) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(
+                        entity_opt,
+                        tab::Message::ToggleShowHidden,
+                    ));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::ToggleShowHidden,
+                    ));
+                }
+            }
+            Message::ToggleSort(entity_opt, sort) => {
+                if self.active_panel == 1 {
+                    return self.update(Message::TabMessage(
+                        entity_opt,
+                        tab::Message::ToggleSort(sort),
+                    ));
+                } else {
+                    return self.update(Message::TabMessageRight(
+                        entity_opt,
+                        tab::Message::ToggleSort(sort),
+                    ));
+                }
+            }
             Message::TabMessage(entity_opt, tab_message) => {
                 let entity = match entity_opt {
                     Some(entity) => entity,
-                    None => {
-                        if self.active_panel == 1 {
-                            self.tab_model1.active()
-                        } else {
-                            self.tab_model2.active()
-                        }
-                    }
+                    None => self.tab_model1.active(),
                 };
 
                 //TODO: move to Task?
@@ -4016,20 +4430,13 @@ impl Application for App {
                     self.set_show_context(false);
                 }
 
-                let tab_commands = match {
-                    match self.active_panel {
-                        1 => self.tab_model1.data_mut::<Tab>(entity),
-                        2 => self.tab_model2.data_mut::<Tab>(entity),
-                        _ => {
-                            log::error!("unknown panel used!");
-                            None
-                        }
-                    }
-                } {
+                let tab_commands = match { self.tab_model1.data_mut::<Tab>(entity) } {
                     Some(tab) => tab.update(tab_message, self.modifiers),
                     _ => Vec::new(),
                 };
 
+                let active_panel = self.active_panel;
+                self.active_panel = 1;
                 let mut commands = Vec::new();
                 for tab_command in tab_commands {
                     match tab_command {
@@ -4051,7 +4458,6 @@ impl Application for App {
                         }
                         tab::Command::ChangeLocation(tab_title, tab_path, selection_paths) => {
                             self.activate_nav_model_location(&tab_path);
-
                             if self.active_panel == 1 {
                                 self.tab_model1.text_set(entity, tab_title);
                             } else {
@@ -4129,6 +4535,138 @@ impl Application for App {
                         }
                     }
                 }
+                self.active_panel = active_panel;
+                return Task::batch(commands);
+            }
+            Message::TabMessageRight(entity_opt, tab_message) => {
+                let entity = match entity_opt {
+                    Some(entity) => entity,
+                    None => self.tab_model2.active(),
+                };
+
+                //TODO: move to Task?
+                if let tab::Message::ContextMenu(_point_opt) = tab_message {
+                    // Disable side context page
+                    self.set_show_context(false);
+                }
+
+                let tab_commands = match { self.tab_model2.data_mut::<Tab>(entity) } {
+                    Some(tab) => tab.update(tab_message, self.modifiers),
+                    _ => Vec::new(),
+                };
+                let active_panel = self.active_panel;
+                self.active_panel = 2;
+                let mut commands = Vec::new();
+                for tab_command in tab_commands {
+                    match tab_command {
+                        tab::Command::Action(action) => {
+                            commands.push(self.update(action.message(Some(entity))));
+                        }
+                        tab::Command::AddNetworkDrive => {
+                            self.context_page = ContextPage::NetworkDrive;
+                            self.set_show_context(true);
+                        }
+                        tab::Command::AddToSidebar(path) => {
+                            let mut favorites = self.config.favorites.clone();
+                            let favorite = Favorite::from_path(path);
+                            if !favorites.iter().any(|f| f == &favorite) {
+                                favorites.push(favorite);
+                            }
+                            config_set!(favorites, favorites);
+                            commands.push(self.update_config());
+                        }
+                        tab::Command::ChangeLocation(tab_title, tab_path, selection_paths) => {
+                            self.activate_nav_model_location(&tab_path);
+                            if self.active_panel == 1 {
+                                self.tab_model1.text_set(entity, tab_title);
+                            } else {
+                                self.tab_model2.text_set(entity, tab_title);
+                            }
+                            commands.push(Task::batch([
+                                self.update_title(),
+                                self.update_watcher(),
+                                self.update_tab(entity, tab_path, selection_paths),
+                            ]));
+                        }
+                        tab::Command::DropFiles(to, from) => {
+                            commands.push(self.update(Message::PasteContents(to, from)));
+                        }
+                        tab::Command::EmptyTrash => {
+                            self.dialog_pages.push_back(DialogPage::EmptyTrash);
+                        }
+                        #[cfg(feature = "desktop")]
+                        tab::Command::ExecEntryAction(entry, action) => {
+                            App::exec_entry_action(entry, action);
+                        }
+                        tab::Command::Iced(iced_command) => {
+                            commands.push(
+                                iced_command.0.map(move |x| {
+                                    message::app(Message::TabMessage(Some(entity), x))
+                                }),
+                            );
+                        }
+                        tab::Command::MoveToTrash(paths) => {
+                            self.operation(Operation::Delete { paths });
+                        }
+                        tab::Command::OpenFile(path) => self.open_file(&path),
+                        tab::Command::OpenInNewTab(path) => {
+                            if self.active_panel == 1 {
+                                commands.push(self.open_tab(
+                                    Location::Path(path.clone()),
+                                    false,
+                                    None,
+                                ));
+                            } else {
+                                commands.push(self.open_tab_right(
+                                    Location::Path(path.clone()),
+                                    false,
+                                    None,
+                                ));
+                            }
+                        }
+                        tab::Command::OpenInNewWindow(path) => match env::current_exe() {
+                            Ok(exe) => match process::Command::new(&exe).arg(path).spawn() {
+                                Ok(_child) => {}
+                                Err(err) => {
+                                    log::error!("failed to execute {:?}: {}", exe, err);
+                                }
+                            },
+                            Err(err) => {
+                                log::error!("failed to get current executable path: {}", err);
+                            }
+                        },
+                        tab::Command::OpenTrash => {
+                            //TODO: use handler for x-scheme-handler/trash and open trash:///
+                            let mut command = process::Command::new("cosmic-commander");
+                            command.arg("--trash");
+                            match spawn_detached(&mut command) {
+                                Ok(()) => {}
+                                Err(err) => {
+                                    log::warn!("failed to run cosmic-commander --trash: {}", err)
+                                }
+                            }
+                        }
+                        tab::Command::Preview(kind) => {
+                            self.context_page = ContextPage::Preview(Some(entity), kind);
+                            self.set_show_context(true);
+                        }
+                        tab::Command::SetOpenWith(mime, id) => {
+                            //TODO: this will block for a few ms, run in background?
+                            self.mime_app_cache.set_default(mime, id);
+                        }
+                        tab::Command::WindowDrag => {
+                            if let Some(window_id) = &self.window_id_opt {
+                                commands.push(window::drag(*window_id));
+                            }
+                        }
+                        tab::Command::WindowToggleMaximize => {
+                            if let Some(window_id) = &self.window_id_opt {
+                                commands.push(window::toggle_maximize(*window_id));
+                            }
+                        }
+                    }
+                }
+                self.active_panel = active_panel;
                 return Task::batch(commands);
             }
             Message::TabNew => {
@@ -4153,6 +4691,7 @@ impl Application for App {
                     Some(tab) => tab.location.clone(),
                     None => Location::Path(home_dir()),
                 };
+                let _ = self.update(Message::StoreOpenPaths);
                 return self.open_tab(location, true, None);
             }
             Message::TabRescan(entity, location, parent_item_opt, items, selection_paths) => {
@@ -4164,6 +4703,28 @@ impl Application for App {
                         None
                     }
                 } {
+                    if location == tab.location {
+                        tab.parent_item_opt = parent_item_opt;
+                        tab.set_items(items);
+                        if let Some(selection_paths) = selection_paths {
+                            tab.select_paths(selection_paths);
+                        }
+                    }
+                }
+            }
+            Message::TabRescanLeft(entity, location, parent_item_opt, items, selection_paths) => {
+                if let Some(tab) = self.tab_model1.data_mut::<Tab>(entity) {
+                    if location == tab.location {
+                        tab.parent_item_opt = parent_item_opt;
+                        tab.set_items(items);
+                        if let Some(selection_paths) = selection_paths {
+                            tab.select_paths(selection_paths);
+                        }
+                    }
+                }
+            }
+            Message::TabRescanRight(entity, location, parent_item_opt, items, selection_paths) => {
+                if let Some(tab) = self.tab_model2.data_mut::<Tab>(entity) {
                     if location == tab.location {
                         tab.parent_item_opt = parent_item_opt;
                         tab.set_items(items);
@@ -5751,27 +6312,25 @@ impl Application for App {
         let focus = self.focus;
         //let total_panes = self.panes.len();
 
-        let pane_grid = 
-            PaneGrid::new(&self.panestates, |id, pane, is_maximized| {
-                //let is_focused = focus == Some(id);
-                
-                pane_grid::Content::new(cosmic::widget::responsive(move |size| {
-                    self.view_pane_content(id, pane, size)
-                }))
-                //.title_bar(title_bar)
-                //.style(if is_focused {
-                //    style::pane_focused
-                //} else {
-                //    style::pane_active
-                //})
+        let pane_grid = PaneGrid::new(&self.panestates, |id, pane, is_maximized| {
+            //let is_focused = focus == Some(id);
+
+            pane_grid::Content::new(cosmic::widget::responsive(move |size| {
+                self.view_pane_content(id, pane, size)
+            }))
+            //.title_bar(title_bar)
+            //.style(if is_focused {
+            //    style::pane_focused
+            //} else {
+            //    style::pane_active
+            //})
         })
         .width(Length::Fill)
         .height(Length::Fill)
-        .spacing(space_s)
+        .spacing(space_xxs)
         .on_click(Message::PaneClicked)
         .on_drag(Message::PaneDragged)
-        .on_resize(10, Message::PaneResized);
-
+        .on_resize(space_s, Message::PaneResized);
 
         widget::container(pane_grid)
             .width(Length::Fill)
@@ -5855,6 +6414,7 @@ impl Application for App {
     fn subscription(&self) -> Subscription<Self::Message> {
         struct ThemeSubscription;
         struct WatcherSubscription;
+        struct WatcherSubscriptionRight;
         struct TrashWatcherSubscription;
 
         let mut subscriptions = vec![
@@ -5969,7 +6529,83 @@ impl Application for App {
                     match watcher_res {
                         Ok(watcher) => {
                             match output
-                                .send(Message::NotifyWatcher(WatcherWrapper {
+                                .send(Message::NotifyWatcherLeft(WatcherWrapper {
+                                    watcher_opt: Some(watcher),
+                                }))
+                                .await
+                            {
+                                Ok(()) => {}
+                                Err(err) => {
+                                    log::warn!("failed to send notify watcher: {:?}", err);
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            log::warn!("failed to create file watcher: {:?}", err);
+                        }
+                    }
+
+                    std::future::pending().await
+                }),
+            ),
+            Subscription::run_with_id(
+                TypeId::of::<WatcherSubscriptionRight>(),
+                stream::channel(100, |mut output| async move {
+                    let watcher_res = {
+                        let mut output = output.clone();
+                        new_debouncer(
+                            time::Duration::from_millis(250),
+                            Some(time::Duration::from_millis(250)),
+                            move |events_res: notify_debouncer_full::DebounceEventResult| {
+                                match events_res {
+                                    Ok(mut events) => {
+                                        log::debug!("{:?}", events);
+
+                                        events.retain(|event| {
+                                            match &event.kind {
+                                                notify::EventKind::Access(_) => {
+                                                    // Data not mutated
+                                                    false
+                                                }
+                                                notify::EventKind::Modify(
+                                                    notify::event::ModifyKind::Metadata(e),
+                                                ) if (*e != notify::event::MetadataKind::Any
+                                                    && *e
+                                                        != notify::event::MetadataKind::WriteTime) =>
+                                                {
+                                                    // Data not mutated nor modify time changed
+                                                    false
+                                                }
+                                                _ => true
+                                            }
+                                        });
+
+                                        if !events.is_empty() {
+                                            match futures::executor::block_on(async {
+                                                output.send(Message::NotifyEvents(events)).await
+                                            }) {
+                                                Ok(()) => {}
+                                                Err(err) => {
+                                                    log::warn!(
+                                                        "failed to send notify events: {:?}",
+                                                        err
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        log::warn!("failed to watch files: {:?}", err);
+                                    }
+                                }
+                            },
+                        )
+                    };
+
+                    match watcher_res {
+                        Ok(watcher) => {
+                            match output
+                                .send(Message::NotifyWatcherRight(WatcherWrapper {
                                     watcher_opt: Some(watcher),
                                 }))
                                 .await
@@ -6197,9 +6833,6 @@ impl Application for App {
         Subscription::batch(subscriptions)
     }
 }
-
-
-
 
 // Utilities to build a temporary file hierarchy for tests.
 //
