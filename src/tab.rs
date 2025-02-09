@@ -4005,7 +4005,7 @@ impl Tab {
                 item.pos_opt.set(Some((count, 0)));
                 item.rect_opt.set(Some(Rectangle::new(
                     Point::new(space_m as f32, y as f32),
-                    Size::new(size.width - (2 * space_m) as f32, row_height as f32),
+                    Size::new(size.width - (2 * space_s) as f32, row_height as f32),
                 )));
 
                 if count > 0 {

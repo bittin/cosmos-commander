@@ -21,7 +21,6 @@ use cosmic::{
         clipboard::dnd::DndAction,
         event,
         futures::{self, SinkExt},
-        id,
         keyboard::{Event as KeyEvent, Key, Modifiers},
         stream,
         window::{self, Event as WindowEvent, Id as WindowId},
@@ -61,9 +60,11 @@ use trash::TrashItem;
 #[cfg(feature = "wayland")]
 use wayland_client::{protocol::wl_output::WlOutput, Proxy};
 
+use alacritty_terminal::{event::Event as TermEvent, term, term::color::Colors as TermColors};
+
 use crate::{
     clipboard::{ClipboardCopy, ClipboardKind, ClipboardPaste},
-    config::{AppTheme, Config, DesktopConfig, Favorite, IconSizes, TabConfig},
+    config::{self, AppTheme, Config, ColorSchemeKind, DesktopConfig, Favorite, IconSizes, TabConfig},
     fl, home_dir,
     key_bind::key_binds,
     localize::LANGUAGE_SORTER,
@@ -259,7 +260,7 @@ pub enum PreviewKind {
     Selected,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PaneType {
     ButtonPane,
     TerminalPane,
@@ -267,7 +268,7 @@ enum PaneType {
     RightPane,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Pane {
     id: PaneType,
     pub is_pinned: bool,
@@ -349,14 +350,14 @@ fn pane_setup(
         }
     } else if !show_button_row && show_embedded_terminal && show_second_panel {
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((p, s)) = panestates.split(
+        if let Some((t, s)) = panestates.split(
             pane_grid::Axis::Horizontal,
             pane,
             Pane::new(PaneType::TerminalPane),
         ) {
             panestates.resize(s, 0.75);
             splits.push(s);
-            panes.push(p);
+            panes.push(t);
             if let Some((p, s)) = panestates.split(
                 pane_grid::Axis::Vertical,
                 pane,
@@ -389,7 +390,7 @@ fn pane_setup(
         }
     } else if !show_button_row && show_embedded_terminal && !show_second_panel {
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((p, s)) = panestates.split(
+        if let Some((t, s)) = panestates.split(
             pane_grid::Axis::Horizontal,
             pane,
             Pane::new(PaneType::TerminalPane),
@@ -397,7 +398,7 @@ fn pane_setup(
             panes.push(pane);
             panestates.resize(s, 0.75);
             splits.push(s);
-            panes.push(p);
+            panes.push(t);
         }
     } else if show_button_row && !show_embedded_terminal && !show_second_panel {
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
@@ -595,6 +596,10 @@ pub enum Message {
         Option<Vec<PathBuf>>,
     ),
     TabView(Option<Entity>, tab::View),
+    TermEvent(pane_grid::Pane, Entity, alacritty_terminal::event::Event),
+    TermEventTx(mpsc::UnboundedSender<(pane_grid::Pane, Entity, alacritty_terminal::event::Event)>),
+    TermMouseEnter(pane_grid::Pane),
+    TermNew,
     ToggleContextPage(ContextPage),
     ToggleFoldersFirst,
     ToggleShowHidden(Option<Entity>),
@@ -773,6 +778,9 @@ pub struct App {
     panestates: pane_grid::State<Pane>,
     panes_created: usize,
     focus: Option<pane_grid::Pane>,
+    term_event_tx_opt:
+        Option<mpsc::UnboundedSender<(pane_grid::Pane, Entity, alacritty_terminal::event::Event)>>,
+    terminal: Option<Mutex<crate::terminal::Terminal>>,
     active_panel: u32,
     //terminal: Terminal,
     show_button_row: bool,
@@ -782,6 +790,9 @@ pub struct App {
     config: Config,
     mode: Mode,
     app_themes: Vec<String>,
+    themes: HashMap<(String, ColorSchemeKind), TermColors>,
+    theme_names_dark: Vec<String>,
+    theme_names_light: Vec<String>,
     context_page: ContextPage,
     dialog_pages: VecDeque<DialogPage>,
     dialog_text_input: widget::Id,
@@ -1425,6 +1436,7 @@ impl App {
     }
 
     fn update_config(&mut self) -> Task<Message> {
+        self.update_color_schemes();
         self.update_nav_model();
         // Tabs are collected first to placate the borrowck
         let tabs: Vec<_> = match self.active_panel {
@@ -2240,14 +2252,133 @@ impl App {
             //content.explain(cosmic::iced::Color::WHITE)
             return content;
         } else {
-            // Terminal Alacritty
-            let tab_column = widget::row::with_children(vec![]).width(Length::Fill);
+            // Terminal
+            let mut tab_column = widget::column::with_capacity(1);
+            let terminal_id = widget::Id::unique();
+            if let Some(terminal) = &self.terminal {
+                let terminal_box = crate::terminal_box::terminal_box(&terminal)
+                .id(terminal_id)
+                //.on_context_menu(move |position_opt| {
+                //    Message::TermContextMenu(id, position_opt)
+                //})
+                //.on_middle_click(move || Message::TermMiddleClick(pane, Some(entity_middle_click)))
+                .opacity(1.0)
+                .padding(space_xxs)
+                .show_headerbar(false);
+
+                tab_column = tab_column.push(terminal_box.on_mouse_enter(move || Message::TermMouseEnter(id)));
+            }
             let content: Element<_> = tab_column.into();
 
             // Uncomment to debug layout:
             //content.explain(cosmic::iced::Color::WHITE)
             return content;
         }
+    }
+
+    fn create_and_focus_new_terminal(
+        &mut self,
+        pane: pane_grid::Pane,
+        //profile_id_opt: Option<ProfileId>,
+    ) -> Task<Message> {
+        self.focus = Some(pane);
+        match &self.term_event_tx_opt {
+            Some(term_event_tx) => {
+                let colors = match self.config.color_scheme_kind() {
+                        ColorSchemeKind::Dark => self.themes.get(&(
+                            config::COSMIC_THEME_DARK.to_string(), 
+                            ColorSchemeKind::Dark)),
+                        ColorSchemeKind::Light => self.themes.get(&(
+                            config::COSMIC_THEME_LIGHT.to_string(),
+                            ColorSchemeKind::Light,
+                        )),
+                    };
+                match colors {
+                    Some(colors) => {
+                        let current_pane = pane;
+                        // Use the startup options, profile options, or defaults
+                        let (options, tab_title_override) =  (alacritty_terminal::tty::Options::default(), None);
+                        match crate::terminal::Terminal::new(
+                            current_pane,
+                            Entity::default(),
+                            term_event_tx.clone(),
+                            term::Config {..Default::default()},
+                            options,
+                            //&self.config,
+                            *colors,
+                            //profile_id_opt,
+                            tab_title_override,
+                        ) {
+                            Ok(terminal) => {
+                                //terminal.set_config(&self.config, &self.themes);
+                                self.terminal = Some(Mutex::new(terminal));
+                                return Task::none();
+                            }
+                            Err(err) => {
+                                log::error!("failed to open terminal: {}", err);
+                                // Clean up partially created tab
+                                return Task::none();
+                            }
+                        }
+                    }
+                    None => {
+                        log::error!("failed to find terminal theme ");
+                        return Task::none();
+                    }
+                }
+            }
+            None => {
+                log::warn!("tried to create new tab before having event channel");
+                return Task::none();
+            }
+        }
+    }
+
+    fn update_color_schemes(&mut self) {
+        self.themes = crate::terminal_theme::terminal_themes();
+        for &color_scheme_kind in &[ColorSchemeKind::Dark, ColorSchemeKind::Light] {
+            for (color_scheme_name, color_scheme_id) in
+                self.config.color_scheme_names(color_scheme_kind)
+            {
+                if let Some(color_scheme) = self
+                    .config
+                    .color_schemes(color_scheme_kind)
+                    .get(&color_scheme_id)
+                {
+                    if self
+                        .themes
+                        .insert(
+                            (color_scheme_name.clone(), color_scheme_kind),
+                            color_scheme.into(),
+                        )
+                        .is_some()
+                    {
+                        log::warn!(
+                            "custom {:?} color scheme {:?} replaces builtin one",
+                            color_scheme_kind,
+                            color_scheme_name
+                        );
+                    }
+                }
+            }
+        }
+
+        self.theme_names_dark.clear();
+        self.theme_names_light.clear();
+        for (name, color_scheme_kind) in self.themes.keys() {
+            match *color_scheme_kind {
+                ColorSchemeKind::Dark => {
+                    self.theme_names_dark.push(name.clone());
+                }
+                ColorSchemeKind::Light => {
+                    self.theme_names_light.push(name.clone());
+                }
+            }
+        }
+        self.theme_names_dark
+            .sort_by(|a, b| LANGUAGE_SORTER.compare(a, b));
+        self.theme_names_light
+            .sort_by(|a, b| LANGUAGE_SORTER.compare(a, b));
     }
 }
 
@@ -2306,17 +2437,25 @@ impl Application for App {
             flags.config.show_second_panel,
         );
         let panes_created = panestates.len();
+        
+        //let initial_pane_id= 0;
+        //let config = alacritty_terminal::term::Config {..Default::default()};
+        let term_event_tx_opt = None;
+        let terminal = None;
+
         let mut app = App {
             core,
             nav_bar_context_id: segmented_button::Entity::null(),
             nav_model: segmented_button::ModelBuilder::default().build(),
             tab_model1: segmented_button::ModelBuilder::default().build(),
             tab_model2: segmented_button::ModelBuilder::default().build(),
-            panes: Vec::new(),
-            splits: Vec::new(),
+            panes,
+            splits,
             panestates,
             panes_created,
             focus: None,
+            term_event_tx_opt,
+            terminal,
             active_panel: 1,
             show_button_row: flags.config.show_button_row,
             show_embedded_terminal: flags.config.show_embedded_terminal,
@@ -2325,6 +2464,9 @@ impl Application for App {
             config: flags.config,
             mode: flags.mode,
             app_themes,
+            themes: HashMap::new(),
+            theme_names_dark: Vec::new(),
+            theme_names_light: Vec::new(),
             context_page: ContextPage::Preview(None, PreviewKind::Selected),
             dialog_pages: VecDeque::new(),
             dialog_text_input: widget::Id::unique(),
@@ -4765,6 +4907,99 @@ impl Application for App {
                 }
                 return self.update(Message::TabActivate(entity));
             }
+            Message::TermEvent(_pane, _entity, event) => {
+                match event {
+                    TermEvent::Bell => {
+                        //TODO: audible or visible bell options?
+                    }
+                    TermEvent::ClipboardLoad(kind, callback) => {
+                        match kind {
+                            term::ClipboardType::Clipboard => {
+                                log::info!("clipboard load");
+                                return clipboard::read().map(move |data_opt| {
+                                    //TODO: what to do when data_opt is None?
+                                    callback(&data_opt.unwrap_or_default());
+                                    // We don't need to do anything else
+                                    message::none()
+                                });
+                            }
+                            term::ClipboardType::Selection => {
+                                log::info!("TODO: load selection");
+                            }
+                        }
+                    }
+                    TermEvent::ClipboardStore(kind, data) => match kind {
+                        term::ClipboardType::Clipboard => {
+                            log::info!("clipboard store");
+                            return clipboard::write(data);
+                        }
+                        term::ClipboardType::Selection => {
+                            log::info!("TODO: store selection");
+                        }
+                    },
+                    TermEvent::ColorRequest(index, f) => {
+                        if let Some(terminal) = &self.terminal {
+                            let terminal = terminal.lock().unwrap();
+                            let rgb = terminal.colors()[index].unwrap_or_default();
+                            let text = f(rgb);
+                            terminal.input_no_scroll(text.into_bytes());
+                        }
+                    }
+                    TermEvent::CursorBlinkingChange => {
+                        //TODO: should we blink the cursor?
+                    }
+                    TermEvent::Exit => {}
+                    TermEvent::PtyWrite(text) => {
+                        if let Some(terminal) = &self.terminal {
+                            let terminal = terminal.lock().unwrap();
+                            terminal.input_no_scroll(text.into_bytes());
+                        }
+                    }
+                    TermEvent::ResetTitle => {},
+                    TermEvent::TextAreaSizeRequest(f) => {
+                        if let Some(terminal) = &self.terminal {
+                            let terminal = terminal.lock().unwrap();
+                            let text = f(terminal.size().into());
+                            terminal.input_no_scroll(text.into_bytes());
+                        }
+                    }
+                    TermEvent::Title(_title) => {}
+                    TermEvent::MouseCursorDirty | TermEvent::Wakeup => {
+                        if let Some(terminal) = &self.terminal {
+                            let mut terminal = terminal.lock().unwrap();
+                            terminal.needs_update = true;
+                        }
+                    }
+                    TermEvent::ChildExit(_error_code) => {
+                        //Ignore this for now
+                    }
+                }
+            }
+            Message::TermEventTx(term_event_tx) => {
+                // Set new terminal event channel
+                self.term_event_tx_opt = Some(term_event_tx);
+
+                // Spawn first tab
+                return self.update(Message::TermNew);
+            }
+            Message::TermMouseEnter(pane) => {
+                self.focus = Some(pane);
+            }
+            Message::TermNew => {
+                let pane;
+                if self.config.show_button_row && self.show_embedded_terminal && self.show_second_panel {
+                    pane = self.panes[0];
+                } else if self.show_button_row && self.show_embedded_terminal && !self.show_second_panel {
+                    pane = self.panes[0];
+                } else if !self.show_button_row && self.show_embedded_terminal && self.show_second_panel {
+                    pane = self.panes[0];
+                } else if !self.show_button_row && self.show_embedded_terminal && !self.show_second_panel {
+                    pane = self.panes[1];
+                } else {
+                    return Task::none();
+                }
+                return self.create_and_focus_new_terminal(pane);
+            }
             Message::ToggleContextPage(context_page) => {
                 //TODO: ensure context menus are closed
                 if self.context_page == context_page {
@@ -6413,6 +6648,7 @@ impl Application for App {
 
     fn subscription(&self) -> Subscription<Self::Message> {
         struct ThemeSubscription;
+        struct TerminalEventSubscription;
         struct WatcherSubscription;
         struct WatcherSubscriptionRight;
         struct TrashWatcherSubscription;
@@ -6472,6 +6708,22 @@ impl Application for App {
                 }
                 Message::SystemThemeModeChange(update.config)
             }),
+            Subscription::run_with_id(
+                TypeId::of::<TerminalEventSubscription>(),
+                stream::channel(100, |mut output| async move {
+                    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+                    output.send(Message::TermEventTx(event_tx)).await.unwrap();
+
+                    while let Some((pane, entity, event)) = event_rx.recv().await {
+                        output
+                            .send(Message::TermEvent(pane, entity, event))
+                            .await
+                            .unwrap();
+                    }
+
+                    panic!("terminal event channel closed");
+                }),
+            ),
             Subscription::run_with_id(
                 TypeId::of::<WatcherSubscription>(),
                 stream::channel(100, |mut output| async move {

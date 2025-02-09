@@ -17,11 +17,16 @@ mod mime_app;
 pub mod mime_icon;
 mod mounter;
 mod mouse_area;
+mod mouse_reporter;
 pub mod operation;
 mod spawn_detached;
 use tab::Location;
 pub mod tab;
+mod terminal_box;
+mod terminal_theme;
+mod terminal;
 mod thumbnailer;
+//pub mod terminal;
 
 pub(crate) fn err_str<T: ToString>(err: T) -> String {
     err.to_string()
