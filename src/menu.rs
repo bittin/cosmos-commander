@@ -212,6 +212,10 @@ pub fn context_menu<'a>(
                 }
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("move-to-trash"), Action::MoveToTrash).into());
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("new-tab"), Action::TabNew).into());
+                children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
+                children.push(menu_item(fl!("move-tab"), Action::MoveTab).into());
             } else {
                 //TODO: need better designs for menu with no selection
                 //TODO: have things like properties but they apply to the folder?
@@ -238,6 +242,10 @@ pub fn context_menu<'a>(
                         menu_item(fl!("display-settings"), Action::CosmicSettingsDisplays).into(),
                     );
                 }
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("new-tab"), Action::TabNew).into());
+                children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
+                children.push(menu_item(fl!("move-tab"), Action::MoveTab).into());
 
                 children.push(divider::horizontal::light().into());
                 // TODO: Nested menu
@@ -523,6 +531,9 @@ pub fn menu_bar<'a>(
                 key_binds,
                 vec![
                     menu::Item::Button(fl!("new-tab"), None, Action::TabNew),
+                    menu::Item::Button(fl!("copy-tab"), None, Action::TabNew),
+                    menu::Item::Button(fl!("move-tab"), None, Action::TabNew),
+                    menu::Item::Divider,
                     menu::Item::Button(fl!("new-window"), None, Action::WindowNew),
                     menu::Item::Button(fl!("new-folder"), None, Action::NewFolder),
                     menu::Item::Button(fl!("new-file"), None, Action::NewFile),
@@ -533,7 +544,9 @@ pub fn menu_bar<'a>(
                     ),
                     menu_button_optional(fl!("menu-open-with"), Action::OpenWith, selected == 1),
                     menu::Item::Divider,
-                    menu_button_optional(fl!("rename"), Action::Rename, selected > 0),
+                    menu_button_optional(fl!("rename"), Action::F2Rename, selected > 0),
+                    menu_button_optional(fl!("f5-copy"), Action::F5Copy, selected > 0),
+                    menu_button_optional(fl!("f6-move"), Action::F6Move, selected > 0),
                     menu::Item::Divider,
                     menu_button_optional(fl!("add-to-sidebar"), Action::AddToSidebar, selected > 0),
                     menu::Item::Divider,

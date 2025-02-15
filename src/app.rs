@@ -98,6 +98,7 @@ pub enum Action {
     Copy,
     CopyOrSigint,
     CopyPrimary,
+    CopyTab,
     Cut,
     CosmicSettingsAppearance,
     CosmicSettingsDisplays,
@@ -126,6 +127,7 @@ pub enum Action {
     ItemRight,
     ItemUp,
     LocationUp,
+    MoveTab,
     MoveToTrash,
     NewFile,
     NewFolder,
@@ -174,6 +176,7 @@ impl Action {
             Action::Copy => Message::Copy(entity_opt),
             Action::CopyOrSigint => Message::CopyOrSigint(entity_opt),
             Action::CopyPrimary => Message::CopyPrimary(entity_opt),
+            Action::CopyTab => Message::CopyTab(entity_opt),
             Action::Cut => Message::Cut(entity_opt),
             Action::CosmicSettingsAppearance => Message::CosmicSettings("appearance"),
             Action::CosmicSettingsDisplays => Message::CosmicSettings("displays"),
@@ -202,6 +205,7 @@ impl Action {
             Action::ItemRight => Message::ItemRight(entity_opt),
             Action::ItemUp => Message::ItemUp(entity_opt),
             Action::LocationUp => Message::LocationUp(entity_opt),
+            Action::MoveTab => Message::MoveTab(entity_opt),
             Action::MoveToTrash => Message::MoveToTrash(entity_opt),
             Action::NewFile => Message::NewItem(entity_opt, false),
             Action::NewFolder => Message::NewItem(entity_opt, true),
@@ -469,6 +473,7 @@ pub enum Message {
     Copy(Option<Entity>),
     CopyOrSigint(Option<segmented_button::Entity>),
     CopyPrimary(Option<segmented_button::Entity>),
+    CopyTab(Option<segmented_button::Entity>),
     CosmicSettings(&'static str),
     Cut(Option<Entity>),
     DesktopConfig(DesktopConfig),
@@ -503,6 +508,7 @@ pub enum Message {
     LaunchUrl(String),
     MaybeExit,
     Modifiers(Modifiers),
+    MoveTab(Option<segmented_button::Entity>),
     MoveToTrash(Option<Entity>),
     MounterItems(MounterKey, MounterItems),
     MountResult(MounterKey, MounterItem, Result<bool, String>),
@@ -584,6 +590,7 @@ pub enum Message {
     TabCloseLeft(Option<Entity>),
     TabCloseRight(Option<Entity>),
     TabConfig(TabConfig),
+    TabCreate(Option<Location>),
     TabMessage(Option<Entity>, tab::Message),
     TabMessageRight(Option<Entity>, tab::Message),
     TabNew,
@@ -2899,6 +2906,35 @@ impl Application for App {
                     log::warn!("Failed to get focused pane");
                 }
             }
+            Message::CopyTab(_entity_opt) => {
+                let entity;
+                // get the selected paths of the active panel
+                let tempactive;
+                let saveactive;
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                    tempactive = 2;
+                    saveactive = 1;
+                } else {
+                    entity = self.tab_model2.active();
+                    tempactive = 1;
+                    saveactive = 2;
+                }
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    }
+                } {
+                    let location = tab.location.clone();
+                    // create a new tab in the other panel
+                    self.active_panel = tempactive;
+                    let _ = self.update(Message::TabCreate(Some(location)));
+                }
+                self.active_panel = saveactive;
+            }
             Message::Cut(entity_opt) => {
                 let paths = self.selected_paths(entity_opt);
                 let contents = ClipboardCopy::new(ClipboardKind::Cut, &paths);
@@ -3349,6 +3385,37 @@ impl Application for App {
             },
             Message::Modifiers(modifiers) => {
                 self.modifiers = modifiers;
+            }
+            Message::MoveTab(entity_opt) => {
+                let entity;
+                // get the selected paths of the active panel
+                let tempactive;
+                let saveactive;
+                if self.active_panel == 1 {
+                    entity = self.tab_model1.active();
+                    tempactive = 2;
+                    saveactive = 1;
+                } else {
+                    entity = self.tab_model2.active();
+                    tempactive = 1;
+                    saveactive = 2;
+                }
+                if let Some(tab) = match self.active_panel {
+                    1 => self.tab_model1.data_mut::<Tab>(entity),
+                    2 => self.tab_model2.data_mut::<Tab>(entity),
+                    _ => {
+                        log::error!("unknown panel used!");
+                        None
+                    }
+                } {
+                    let location = tab.location.clone();
+                    // create a new tab in the other panel
+                    self.active_panel = tempactive;
+                    let _ = self.update(Message::TabCreate(Some(location)));
+                }
+                // Close the old panel
+                self.active_panel = saveactive;
+                let _ = self.update(Message::TabClose(entity_opt));
             }
             Message::MoveToTrash(entity_opt) => {
                 let paths = self.selected_paths(entity_opt);
@@ -4619,6 +4686,40 @@ impl Application for App {
                         config_set!(tab_right, config);
                         return self.update_config();
                     }
+                }
+            }
+            Message::TabCreate(location_opt) => {
+                if let Some(location) = location_opt {
+                    let _ = self.update(Message::StoreOpenPaths);
+                    if self.active_panel == 1 {
+                        return self.open_tab(location, true, None);
+                    } else {
+                        return self.open_tab_right(location, true, None);
+                    }
+                } else {
+                    let entity = match self.active_panel {
+                        1 => self.tab_model1.active(),
+                        2 => self.tab_model2.active(),
+                        _ => {
+                            log::error!("unknown panel used!");
+                            self.tab_model1.active()
+                        }
+                    };
+                    let location = match {
+                        match self.active_panel {
+                            1 => self.tab_model1.data_mut::<Tab>(entity),
+                            2 => self.tab_model2.data_mut::<Tab>(entity),
+                            _ => {
+                                log::error!("unknown panel used!");
+                                None
+                            }
+                        }
+                    } {
+                        Some(tab) => tab.location.clone(),
+                        None => Location::Path(home_dir()),
+                    };
+                    let _ = self.update(Message::StoreOpenPaths);
+                    return self.open_tab(location, true, None);
                 }
             }
             Message::ToggleFoldersFirst => {
