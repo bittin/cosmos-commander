@@ -66,7 +66,7 @@ use crate::{
     clipboard::{ClipboardCopy, ClipboardKind, ClipboardPaste},
     config::{self, AppTheme, Config, ColorSchemeKind, DesktopConfig, Favorite, IconSizes, TabConfig},
     fl, home_dir,
-    key_bind::key_binds,
+    key_bind::{key_binds, key_binds_terminal},
     localize::LANGUAGE_SORTER,
     menu, mime_app, mime_icon,
     mounter::{MounterAuth, MounterItem, MounterItems, MounterKey, MounterMessage, MOUNTERS},
@@ -93,8 +93,11 @@ pub struct Flags {
 pub enum Action {
     About,
     AddToSidebar,
+    ClearScrollback,
     Compress,
     Copy,
+    CopyOrSigint,
+    CopyPrimary,
     Cut,
     CosmicSettingsAppearance,
     CosmicSettingsDisplays,
@@ -133,6 +136,7 @@ pub enum Action {
     OpenTerminal,
     OpenWith,
     Paste,
+    PastePrimary,
     Preview,
     Rename,
     RestoreFromTrash,
@@ -165,8 +169,11 @@ impl Action {
         match self {
             Action::About => Message::ToggleContextPage(ContextPage::About),
             Action::AddToSidebar => Message::AddToSidebar(entity_opt),
+            Action::ClearScrollback => Message::ClearScrollback(entity_opt),
             Action::Compress => Message::Compress(entity_opt),
             Action::Copy => Message::Copy(entity_opt),
+            Action::CopyOrSigint => Message::CopyOrSigint(entity_opt),
+            Action::CopyPrimary => Message::CopyPrimary(entity_opt),
             Action::Cut => Message::Cut(entity_opt),
             Action::CosmicSettingsAppearance => Message::CosmicSettings("appearance"),
             Action::CosmicSettingsDisplays => Message::CosmicSettings("displays"),
@@ -205,6 +212,7 @@ impl Action {
             Action::OpenTerminal => Message::OpenTerminal(entity_opt),
             Action::OpenWith => Message::OpenWithDialog(entity_opt),
             Action::Paste => Message::Paste(entity_opt),
+            Action::PastePrimary => Message::PastePrimary(entity_opt),
             Action::Preview => Message::Preview(entity_opt),
             Action::Rename => Message::Rename(entity_opt),
             Action::RestoreFromTrash => Message::RestoreFromTrash(entity_opt),
@@ -395,10 +403,10 @@ fn pane_setup(
             pane,
             Pane::new(PaneType::TerminalPane),
         ) {
+            panes.push(t);
             panes.push(pane);
             panestates.resize(s, 0.75);
             splits.push(s);
-            panes.push(t);
         }
     } else if show_button_row && !show_embedded_terminal && !show_second_panel {
         (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
@@ -454,10 +462,13 @@ impl MenuAction for NavMenuAction {
 pub enum Message {
     AddToSidebar(Option<Entity>),
     AppTheme(AppTheme),
+    ClearScrollback(Option<segmented_button::Entity>),
     CloseToast(widget::ToastId),
     Compress(Option<Entity>),
     Config(Config),
     Copy(Option<Entity>),
+    CopyOrSigint(Option<segmented_button::Entity>),
+    CopyPrimary(Option<segmented_button::Entity>),
     CosmicSettings(&'static str),
     Cut(Option<Entity>),
     DesktopConfig(DesktopConfig),
@@ -532,6 +543,8 @@ pub enum Message {
     //PaneClose(pane_grid::Pane),
     //PaneCloseFocused,
     Paste(Option<Entity>),
+    PastePrimary(Option<segmented_button::Entity>),
+    PasteValueTerminal(String),
     PasteContents(PathBuf, ClipboardPaste),
     PendingCancel(u64),
     PendingCancelAll,
@@ -797,6 +810,7 @@ pub struct App {
     dialog_pages: VecDeque<DialogPage>,
     dialog_text_input: widget::Id,
     key_binds: HashMap<KeyBind, Action>,
+    key_binds_terminal: HashMap<KeyBind, Action>,
     margin: HashMap<window::Id, (f32, f32, f32, f32)>,
     mime_app_cache: mime_app::MimeAppCache,
     modifiers: Modifiers,
@@ -1756,9 +1770,7 @@ impl App {
                     self.watcher_opt_right = Some((watcher, new_paths));
                 }
             }
-            None => {
-                log::error!("Failed to open the previous watcher!");
-            }
+            None => {}
         }
         //TODO: should any of this run in a command?
         Task::none()
@@ -2117,9 +2129,9 @@ impl App {
         .into()
     }
 
-    fn view_pane_content(&self, id: pane_grid::Pane, pane: &Pane, size: Size) -> Element<Message> {
+    fn view_pane_content(&self, id: pane_grid::Pane, pane: &Pane, _size: Size) -> Element<Message> {
         let cosmic_theme::Spacing {
-            space_xxs, space_s, ..
+            space_xxs, ..
         } = theme::active().cosmic().spacing;
 
         if pane.id == PaneType::LeftPane || pane.id == PaneType::RightPane {
@@ -2156,7 +2168,7 @@ impl App {
                     )
                     .class(style::Container::Background)
                     .width(Length::Fill)
-                    .padding([0, space_s]),
+                    .padding([0, space_xxs]),
                 );
                 let entity_left = self.tab_model1.active();
                 if let Some(tab) = self.tab_model1.data::<Tab>(entity_left) {
@@ -2181,7 +2193,7 @@ impl App {
                             .drag_id(self.tab_drag_id_right),
                     )
                     .class(style::Container::Background)
-                    .padding([0, space_s]),
+                    .padding([0, space_xxs]),
                 );
                 let entity_right = self.tab_model2.active();
                 if let Some(tab) = self.tab_model2.data::<Tab>(entity_right) {
@@ -2428,6 +2440,7 @@ impl Application for App {
             Mode::App => tab::Mode::App,
             Mode::Desktop => tab::Mode::Desktop,
         });
+        let key_binds_terminal = key_binds_terminal();
 
         let window_id_opt = core.main_window_id();
 
@@ -2471,6 +2484,7 @@ impl Application for App {
             dialog_pages: VecDeque::new(),
             dialog_text_input: widget::Id::unique(),
             key_binds,
+            key_binds_terminal,
             margin: HashMap::new(),
             mime_app_cache: mime_app::MimeAppCache::new(),
             modifiers: Modifiers::empty(),
@@ -2814,6 +2828,14 @@ impl Application for App {
                 config_set!(app_theme, app_theme);
                 return self.update_config();
             }
+            Message::ClearScrollback(_entity_opt) => {
+                if let Some(terminalmutex) = &self.terminal.as_mut() {
+                    if let Ok(terminal) = terminalmutex.lock() {
+                        let mut term = terminal.term.lock();
+                        term.grid_mut().clear_history();
+                    }
+                }
+            }
             Message::Compress(entity_opt) => {
                 let paths = self.selected_paths(entity_opt);
                 if let Some(current_path) = paths.first() {
@@ -2845,6 +2867,37 @@ impl Application for App {
                 let paths = self.selected_paths(entity_opt);
                 let contents = ClipboardCopy::new(ClipboardKind::Copy, &paths);
                 return clipboard::write_data(contents);
+            }
+            Message::CopyOrSigint(_entity_opt) => {
+                if let Some(terminalmutex) = self.terminal.as_mut() {
+                    if let Ok(terminal) = terminalmutex.lock() {
+                        let term = terminal.term.lock();
+                        if let Some(text) = term.selection_to_string() {
+                            return Task::batch([
+                                clipboard::write_primary(text)
+                            ]);
+                        } else {
+                            // Drop the lock for term so that input_scroll doesn't block forever
+                            drop(term);
+                            // 0x03 is ^C
+                            terminal.input_scroll(b"\x03".as_slice());
+                        }
+                    }
+                }
+            }
+            Message::CopyPrimary(_entity_opt) => {
+                if let Some(terminalmutex) = self.terminal.as_mut() {
+                    if let Ok(terminal) = terminalmutex.lock() {
+                        let term = terminal.term.lock();
+                        if let Some(text) = term.selection_to_string() {
+                            return Task::batch([
+                                clipboard::write_primary(text)
+                            ]);
+                        }
+                    }
+                } else {
+                    log::warn!("Failed to get focused pane");
+                }
             }
             Message::Cut(entity_opt) => {
                 let paths = self.selected_paths(entity_opt);
@@ -3252,15 +3305,23 @@ impl Application for App {
                 }
             }
             Message::Key(modifiers, key) => {
-                let entity;
-                if self.active_panel == 1 {
-                    entity = self.tab_model1.active();
+                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                    for (key_bind, action) in &self.key_binds_terminal {
+                        if key_bind.matches(modifiers, &key) {
+                            return self.update(action.message(None));
+                        }
+                    }
                 } else {
-                    entity = self.tab_model2.active();
-                }
-                for (key_bind, action) in self.key_binds.iter() {
-                    if key_bind.matches(modifiers, &key) {
-                        return self.update(action.message(Some(entity)));
+                    let entity;
+                    if self.active_panel == 1 {
+                        entity = self.tab_model1.active();
+                    } else {
+                        entity = self.tab_model2.active();
+                    }
+                    for (key_bind, action) in self.key_binds.iter() {
+                        if key_bind.matches(modifiers, &key) {
+                            return self.update(action.message(Some(entity)));
+                        }
                     }
                 }
             }
@@ -3595,13 +3656,23 @@ impl Application for App {
                 }
             },
             Message::Open(entity_opt) => {
-                if self.active_panel == 1 {
-                    return self.update(Message::TabMessage(entity_opt, tab::Message::Open(None)));
+                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                    if let Some(terminal) = self.terminal.as_mut() {
+                        if let Ok(mut terminal_ok) = terminal.lock() {
+                            //if terminal_ok.needs_update {
+                                terminal_ok.update();
+                            //}
+                        }
+                    }
                 } else {
-                    return self.update(Message::TabMessageRight(
-                        entity_opt,
-                        tab::Message::Open(None),
-                    ));
+                    if self.active_panel == 1 {
+                        return self.update(Message::TabMessage(entity_opt, tab::Message::Open(None)));
+                    } else {
+                        return self.update(Message::TabMessageRight(
+                            entity_opt,
+                            tab::Message::Open(None),
+                        ));
+                    }
                 }
             }
             Message::OpenTerminal(entity_opt) => {
@@ -3661,21 +3732,31 @@ impl Application for App {
                 }
             }
             Message::OpenInNewTab(entity_opt) => {
-                let commands = Task::batch(self.selected_paths(entity_opt).into_iter().filter_map(
-                    |path| {
-                        if path.is_dir() {
-                            if self.active_panel == 1 {
-                                Some(self.open_tab(Location::Path(path), false, None))
-                            } else {
-                                Some(self.open_tab_right(Location::Path(path), false, None))
+                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                    if let Some(terminal) = self.terminal.as_mut() {
+                        if let Ok(mut terminal_ok) = terminal.lock() {
+                            if terminal_ok.needs_update {
+                                terminal_ok.update();
                             }
-                        } else {
-                            None
                         }
-                    },
-                ));
-                let _ = self.update(Message::StoreOpenPaths);
-                return commands;
+                    }
+                } else {
+                    let commands = Task::batch(self.selected_paths(entity_opt).into_iter().filter_map(
+                        |path| {
+                            if path.is_dir() {
+                                if self.active_panel == 1 {
+                                    Some(self.open_tab(Location::Path(path), false, None))
+                                } else {
+                                    Some(self.open_tab_right(Location::Path(path), false, None))
+                                }
+                            } else {
+                                None
+                            }
+                        },
+                    ));
+                    let _ = self.update(Message::StoreOpenPaths);
+                    return commands;
+                }
             }
             Message::OpenInNewWindow(entity_opt) => match env::current_exe() {
                 Ok(exe) => self
@@ -3887,6 +3968,19 @@ impl Application for App {
                                 None => message::none(),
                             }
                         });
+                    }
+                }
+            }
+            Message::PastePrimary(_entity_opt) => {
+                return clipboard::read_primary().map(move |value_opt| match value_opt {
+                    Some(value) => message::app(Message::PasteValueTerminal(value)),
+                    None => message::none(),
+                });
+            }
+            Message::PasteValueTerminal(value) => {
+                if let Some(terminalmutex) = &self.terminal.as_mut() {
+                    if let Ok(terminal) = terminalmutex.lock() {
+                        terminal.paste(value);
                     }
                 }
             }
@@ -4977,6 +5071,12 @@ impl Application for App {
             }
             Message::TermEventTx(term_event_tx) => {
                 // Set new terminal event channel
+                if self.term_event_tx_opt.is_some() {
+                    // Close tabs using old terminal event channel
+                    log::warn!("terminal event channel reset, closing tabs");
+                    self.terminal = None;
+                }
+
                 self.term_event_tx_opt = Some(term_event_tx);
 
                 // Spawn first tab
@@ -6544,10 +6644,10 @@ impl Application for App {
             space_xxs, space_s, ..
         } = theme::active().cosmic().spacing;
 
-        let focus = self.focus;
+        //let focus = self.focus;
         //let total_panes = self.panes.len();
 
-        let pane_grid = PaneGrid::new(&self.panestates, |id, pane, is_maximized| {
+        let pane_grid = PaneGrid::new(&self.panestates, |id, pane, _is_maximized| {
             //let is_focused = focus == Some(id);
 
             pane_grid::Content::new(cosmic::widget::responsive(move |size| {
@@ -6654,7 +6754,7 @@ impl Application for App {
         struct TrashWatcherSubscription;
 
         let mut subscriptions = vec![
-            event::listen_with(|event, status, window_id| match event {
+            event::listen_with(|event, status, _window_id| match event {
                 Event::Keyboard(KeyEvent::KeyPressed { key, modifiers, .. }) => match status {
                     event::Status::Ignored => Some(Message::Key(modifiers, key)),
                     event::Status::Captured => None,
@@ -6680,6 +6780,9 @@ impl Application for App {
                         }
                         _ => None,
                     }
+                }
+                Event::Mouse(cosmic::iced_core::mouse::Event::ButtonReleased(cosmic::iced_core::mouse::Button::Left)) => {
+                    Some(Message::CopyPrimary(None))
                 }
                 _ => None,
             }),
@@ -7323,7 +7426,7 @@ pub(crate) mod test_utils {
     }
 
     /// Assert that tab's items are equal to a path's entries.
-    pub fn assert_eq_tab_path_contents(tab: &Tab, path: &Path) {
+    pub fn _assert_eq_tab_path_contents(tab: &Tab, path: &Path) {
         let Some(tab_path) = tab.location.path_opt() else {
             panic!("Expected tab's location to be a path");
         };

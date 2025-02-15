@@ -27,7 +27,6 @@ use cosmic_text::{
 //use indexmap::IndexSet;
 use std::{
     borrow::Cow,
-    collections::HashMap,
     io, mem,
     sync::{
         atomic::{AtomicU32, Ordering},
@@ -134,34 +133,6 @@ fn convert_color(colors: &Colors, color: Color) -> cosmic_text::Color {
         }
     };
     cosmic_text::Color::rgb(rgb.r, rgb.g, rgb.b)
-}
-
-type TabModel = segmented_button::Model<segmented_button::SingleSelect>;
-
-pub struct TerminalPaneGrid {
-    pub panes: pane_grid::State<TabModel>,
-    pub panes_created: usize,
-    pub focus: pane_grid::Pane,
-}
-
-impl TerminalPaneGrid {
-    pub fn new(model: TabModel) -> Self {
-        let (panes, pane) = pane_grid::State::new(model);
-        let mut terminal_ids = HashMap::new();
-        terminal_ids.insert(pane, cosmic::widget::Id::unique());
-
-        Self {
-            panes,
-            panes_created: 1,
-            focus: pane,
-        }
-    }
-    pub fn active(&self) -> Option<&TabModel> {
-        self.panes.get(self.focus)
-    }
-    pub fn active_mut(&mut self) -> Option<&mut TabModel> {
-        self.panes.get_mut(self.focus)
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]

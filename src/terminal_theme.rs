@@ -4,7 +4,7 @@ use alacritty_terminal::{
 };
 use hex_color::HexColor;
 use palette::{encoding::Srgb, rgb::Rgb as PRgb, FromColor, Okhsl};
-use std::{collections::HashMap, fs};
+use std::collections::HashMap;
 
 use crate::config::{
     ColorScheme, ColorSchemeAnsi, ColorSchemeKind, COSMIC_THEME_DARK, COSMIC_THEME_LIGHT,

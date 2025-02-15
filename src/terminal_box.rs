@@ -43,7 +43,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{key_bind::key_binds, terminal::Metadata, app::Action, terminal::Terminal, terminal::TerminalScroll};
+use crate::{
+    app::Action, key_bind::key_binds_terminal, terminal::Metadata, terminal::Terminal,
+    terminal::TerminalScroll,
+};
 
 pub struct TerminalBox<'a, Message> {
     terminal: &'a Mutex<Terminal>,
@@ -79,7 +82,7 @@ where
             opacity: Some(100.0),
             mouse_inside_boundary: None,
             on_middle_click: None,
-            key_binds: key_binds(&crate::tab::Mode::App),
+            key_binds: key_binds_terminal(),
         }
     }
 
@@ -829,70 +832,216 @@ where
                         return Status::Captured;
                     }
                 }
-                let character = text.and_then(|c| c.chars().next()).unwrap_or_default();
-                match (
-                    modifiers.logo(),
-                    modifiers.control(),
-                    modifiers.alt(),
-                    modifiers.shift(),
-                ) {
-                    (true, _, _, _) => {
-                        // Ignore super
-                    }
-                    (false, true, true, _) => {
-                        // Handle ctrl-alt for non-control characters
-                        // and control characters 0-32
-                        if !character.is_control() || (character as u32) < 32 {
-                            // Handle alt for non-control characters
-                            let mut buf = [0x1B, 0, 0, 0, 0];
-                            let len = {
-                                let str = character.encode_utf8(&mut buf[1..]);
-                                str.len() + 1
-                            };
-                            terminal.input_scroll(buf[..len].to_vec());
-                            status = Status::Captured;
+                match key.clone() {
+                    Key::Named(named) => {
+                        let mod_no = calculate_modifier_number(state);
+                        let escape_code = match named {
+                            Named::Insert => csi("2", "~", mod_no),
+                            Named::Delete => csi("3", "~", mod_no),
+                            Named::PageUp => {
+                                if modifiers.shift() {
+                                    terminal.scroll(TerminalScroll::PageUp);
+                                    None
+                                } else {
+                                    csi("5", "~", mod_no)
+                                }
+                            }
+                            Named::PageDown => {
+                                if modifiers.shift() {
+                                    terminal.scroll(TerminalScroll::PageDown);
+                                    None
+                                } else {
+                                    csi("6", "~", mod_no)
+                                }
+                            }
+                            Named::ArrowUp => {
+                                if is_app_cursor {
+                                    ss3("A", mod_no)
+                                } else {
+                                    csi2("A", mod_no)
+                                }
+                            }
+                            Named::ArrowDown => {
+                                if is_app_cursor {
+                                    ss3("B", mod_no)
+                                } else {
+                                    csi2("B", mod_no)
+                                }
+                            }
+                            Named::ArrowRight => {
+                                if is_app_cursor {
+                                    ss3("C", mod_no)
+                                } else {
+                                    csi2("C", mod_no)
+                                }
+                            }
+                            Named::ArrowLeft => {
+                                if is_app_cursor {
+                                    ss3("D", mod_no)
+                                } else {
+                                    csi2("D", mod_no)
+                                }
+                            }
+                            Named::End => {
+                                if modifiers.shift() {
+                                    terminal.scroll(TerminalScroll::Bottom);
+                                    None
+                                } else if is_app_cursor {
+                                    ss3("F", mod_no)
+                                } else {
+                                    csi2("F", mod_no)
+                                }
+                            }
+                            Named::Home => {
+                                if modifiers.shift() {
+                                    terminal.scroll(TerminalScroll::Top);
+                                    None
+                                } else if is_app_cursor {
+                                    ss3("H", mod_no)
+                                } else {
+                                    csi2("H", mod_no)
+                                }
+                            }
+                            Named::F1 => ss3("P", mod_no),
+                            Named::F2 => ss3("Q", mod_no),
+                            Named::F3 => ss3("R", mod_no),
+                            Named::F4 => ss3("S", mod_no),
+                            Named::F5 => csi("15", "~", mod_no),
+                            Named::F6 => csi("17", "~", mod_no),
+                            Named::F7 => csi("18", "~", mod_no),
+                            Named::F8 => csi("19", "~", mod_no),
+                            Named::F9 => csi("20", "~", mod_no),
+                            Named::F10 => csi("21", "~", mod_no),
+                            Named::F11 => csi("23", "~", mod_no),
+                            Named::F12 => csi("24", "~", mod_no),
+                            _ => None,
+                        };
+                        if let Some(escape_code) = escape_code {
+                            terminal.input_scroll(escape_code);
+                            return Status::Captured;
+                        }
+
+                        //Special handle Enter, Escape, Backspace and Tab as described in
+                        //https://sw.kovidgoyal.net/kitty/keyboard-protocol/#legacy-key-event-encoding
+                        //Also special handle Ctrl-_ to behave like xterm
+                        let alt_prefix = if modifiers.alt() { "\x1B" } else { "" };
+                        match named {
+                            Named::Backspace => {
+                                let code = if modifiers.control() { "\x08" } else { "\x7f" };
+                                terminal.input_scroll(format!("{alt_prefix}{code}").into_bytes());
+                                status = Status::Captured;
+                            }
+                            Named::Enter => {
+                                terminal
+                                    .input_scroll(format!("{}{}", alt_prefix, "\x0D").into_bytes());
+                                status = Status::Captured;
+                            }
+                            Named::Escape => {
+                                //Escape with any modifier will cancel selection
+                                let had_selection = {
+                                    let mut term = terminal.term.lock();
+                                    term.selection.take().is_some()
+                                };
+                                if had_selection {
+                                    terminal.update();
+                                } else {
+                                    terminal.input_scroll(
+                                        format!("{}{}", alt_prefix, "\x1B").into_bytes(),
+                                    );
+                                }
+                                status = Status::Captured;
+                            }
+                            Named::Space => {
+                                // Keep this instead of hardcoding the space to allow for dead keys
+                                let character =
+                                    text.and_then(|c| c.chars().next()).unwrap_or_default();
+
+                                if modifiers.control() {
+                                    // Send NUL character (\x00) for Ctrl + Space
+                                    terminal.input_scroll(b"\x00".to_vec());
+                                } else {
+                                    terminal.input_scroll(
+                                        format!("{}{}", alt_prefix, character).into_bytes(),
+                                    );
+                                }
+                                status = Status::Captured;
+                            }
+                            Named::Tab => {
+                                let code = if modifiers.shift() { "\x1b[Z" } else { "\x09" };
+                                terminal.input_scroll(format!("{alt_prefix}{code}").into_bytes());
+                                status = Status::Captured;
+                            }
+                            _ => {}
                         }
                     }
-                    (false, true, _, false) => {
-                        // Handle ctrl for control characters (Ctrl-A to Ctrl-Z)
-                        if character.is_control() {
-                            let mut buf = [0, 0, 0, 0];
-                            let str = character.encode_utf8(&mut buf);
-                            terminal.input_scroll(str.as_bytes().to_vec());
-                            status = Status::Captured;
+                    Key::Character(_c) => {
+                        let character = text.and_then(|c| c.chars().next()).unwrap_or_default();
+                        match (
+                            modifiers.logo(),
+                            modifiers.control(),
+                            modifiers.alt(),
+                            modifiers.shift(),
+                        ) {
+                            (true, _, _, _) => {
+                                // Ignore super
+                            }
+                            (false, true, true, _) => {
+                                // Handle ctrl-alt for non-control characters
+                                // and control characters 0-32
+                                if !character.is_control() || (character as u32) < 32 {
+                                    // Handle alt for non-control characters
+                                    let mut buf = [0x1B, 0, 0, 0, 0];
+                                    let len = {
+                                        let str = character.encode_utf8(&mut buf[1..]);
+                                        str.len() + 1
+                                    };
+                                    terminal.input_scroll(buf[..len].to_vec());
+                                    status = Status::Captured;
+                                }
+                            }
+                            (false, true, _, false) => {
+                                // Handle ctrl for control characters (Ctrl-A to Ctrl-Z)
+                                if character.is_control() {
+                                    let mut buf = [0, 0, 0, 0];
+                                    let str = character.encode_utf8(&mut buf);
+                                    terminal.input_scroll(str.as_bytes().to_vec());
+                                    status = Status::Captured;
+                                }
+                            }
+                            (false, true, _, true) => {
+                                //This is normally Ctrl+Minus, but since that
+                                //is taken by zoom, we send that code for
+                                //Ctrl+Underline instead, like xterm and
+                                //gnome-terminal
+                                if key == Key::Character("_".into()) {
+                                    terminal.input_scroll(b"\x1F".as_slice());
+                                    status = Status::Captured;
+                                }
+                            }
+                            (false, false, true, _) => {
+                                if !character.is_control() {
+                                    // Handle alt for non-control characters
+                                    let mut buf = [0x1B, 0, 0, 0, 0];
+                                    let len = {
+                                        let str = character.encode_utf8(&mut buf[1..]);
+                                        str.len() + 1
+                                    };
+                                    terminal.input_scroll(buf[..len].to_vec());
+                                    status = Status::Captured;
+                                }
+                            }
+                            (false, false, false, _) => {
+                                // Handle no modifiers for non-control characters
+                                if !character.is_control() {
+                                    let mut buf = [0, 0, 0, 0];
+                                    let str = character.encode_utf8(&mut buf);
+                                    terminal.input_scroll(str.as_bytes().to_vec());
+                                    status = Status::Captured;
+                                }
+                            }
                         }
                     }
-                    (false, true, _, true) => {
-                        //This is normally Ctrl+Minus, but since that
-                        //is taken by zoom, we send that code for
-                        //Ctrl+Underline instead, like xterm and
-                        //gnome-terminal
-                        if key == Key::Character("_".into()) {
-                            terminal.input_scroll(b"\x1F".as_slice());
-                            status = Status::Captured;
-                        }
-                    }
-                    (false, false, true, _) => {
-                        if !character.is_control() {
-                            // Handle alt for non-control characters
-                            let mut buf = [0x1B, 0, 0, 0, 0];
-                            let len = {
-                                let str = character.encode_utf8(&mut buf[1..]);
-                                str.len() + 1
-                            };
-                            terminal.input_scroll(buf[..len].to_vec());
-                            status = Status::Captured;
-                        }
-                    }
-                    (false, false, false, _) => {
-                        // Handle no modifiers for non-control characters
-                        if !character.is_control() {
-                            let mut buf = [0, 0, 0, 0];
-                            let str = character.encode_utf8(&mut buf);
-                            terminal.input_scroll(str.as_bytes().to_vec());
-                            status = Status::Captured;
-                        }
-                    }
+                    Key::Unidentified => {}
                 }
             }
             Event::Mouse(MouseEvent::ButtonPressed(button)) => {

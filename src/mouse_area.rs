@@ -354,19 +354,24 @@ where
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) -> event::Status {
-        if let event::Status::Captured = self.content.as_widget_mut().on_event(
-            &mut tree.children[0],
-            event.clone(),
-            layout,
-            cursor,
-            renderer,
-            clipboard,
-            shell,
-            viewport,
-        ) {
-            return event::Status::Captured;
-        }
+        match event {
+            Event::Mouse(_mouseevent) => {
+                if let event::Status::Captured = self.content.as_widget_mut().on_event(
+                    &mut tree.children[0],
+                    event.clone(),
+                    layout,
+                    cursor,
+                    renderer,
+                    clipboard,
+                    shell,
+                    viewport,
+                ) {
+                    return event::Status::Captured;
+                }
 
+            },
+            _ => return event::Status::Ignored,
+        }
         update(
             self,
             &event,

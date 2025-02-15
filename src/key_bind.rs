@@ -25,7 +25,7 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
 
     // Common keys
     bind!([], Key::Named(Named::Space), Gallery);
-    bind!([], Key::Named(Named::Tab), SwapPanels);
+    bind!([Shift], Key::Named(Named::Tab), SwapPanels);
     bind!([], Key::Named(Named::F2), F2Rename);
     bind!([], Key::Named(Named::F3), F3View);
     bind!([], Key::Named(Named::F4), F4Edit);
@@ -35,8 +35,6 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
     bind!([], Key::Named(Named::F8), F8Delete);
     bind!([], Key::Named(Named::F9), F9Terminal);
     bind!([], Key::Named(Named::F10), F10Quit);
-    bind!([], Key::Named(Named::Space), Gallery);
-    bind!([], Key::Named(Named::Space), Gallery);
 
     bind!([], Key::Named(Named::ArrowDown), ItemDown);
     bind!([], Key::Named(Named::ArrowLeft), ItemLeft);
@@ -93,6 +91,45 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
         bind!([Alt], Key::Named(Named::ArrowUp), LocationUp);
         bind!([Ctrl], Key::Character("f".into()), SearchActivate);
     }
+
+    key_binds
+}
+
+pub fn key_binds_terminal() -> HashMap<KeyBind, Action> {
+    let mut key_binds = HashMap::new();
+
+    macro_rules! bind {
+        ([$($modifier:ident),+ $(,)?], $key:expr, $action:ident) => {{
+            key_binds.insert(
+                KeyBind {
+                    modifiers: vec![$(Modifier::$modifier),+],
+                    key: $key,
+                },
+                Action::$action,
+            );
+        }};
+    }
+
+    // Standard key bindings
+    bind!([Ctrl, Shift], Key::Character("A".into()), SelectAll);
+    bind!([Ctrl, Shift], Key::Character("C".into()), Copy);
+    bind!([Ctrl], Key::Character("c".into()), CopyOrSigint);
+    bind!([Ctrl, Shift], Key::Character("V".into()), Paste);
+    bind!([Shift], Key::Named(Named::Insert), PastePrimary);
+    bind!([Ctrl], Key::Character(",".into()), Settings);
+
+    // Ctrl+Tab and Ctrl+Shift+Tab cycle through tabs
+    // Ctrl+Tab is not a special key for terminals and is free to use
+    bind!([Ctrl], Key::Named(Named::Tab), TabNext);
+    bind!([Ctrl, Shift], Key::Named(Named::Tab), TabPrev);
+
+    // Ctrl+0, Ctrl+-, and Ctrl+= are not special keys for terminals and are free to use
+    bind!([Ctrl], Key::Character("-".into()), ZoomOut);
+    bind!([Ctrl], Key::Character("=".into()), ZoomIn);
+    bind!([Ctrl], Key::Character("+".into()), ZoomIn);
+
+    // CTRL+Alt+L clears the scrollback.
+    bind!([Ctrl, Alt], Key::Character("L".into()), ClearScrollback);
 
     key_binds
 }
