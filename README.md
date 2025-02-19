@@ -7,7 +7,7 @@ Dual Panel File manager for the COSMIC desktop environment. Think of a less clut
 This project is based on [COSMIC files](https://github.com/pop-os/cosmic-files) and the Terminal on [COSMIC term](https://github.com/pop-os/cosmic-term).
 
 > [!NOTE]
-> This project is still early in development. The basic functionality is working. Two panels, copying or moving files or tabs between them. A Terminal to run commands.
+> The basic functionality is working. Two panels, copying or moving files or tabs between them. A Terminal to run commands. And all the features of COSMIC Files that it inherits. Good enough to close krusader and use cosmic-commander instead. Further features will be coming as needed. Or as requested by users.
 
 ## Build the project from source
 
