@@ -10,7 +10,7 @@ use super::{Mounter, MounterAuth, MounterItem, MounterItems, MounterMessage};
 use crate::{
     config::IconSizes,
     err_str,
-    tab::{self, DirSize, ItemMetadata, ItemThumbnail, Location},
+    tab1::{self, DirSize, ItemMetadata, ItemThumbnail, Location},
 };
 
 fn gio_icon_to_path(icon: &gio::Icon, size: u16) -> Option<PathBuf> {
@@ -57,7 +57,7 @@ fn items(monitor: &gio::VolumeMonitor, sizes: IconSizes) -> MounterItems {
     items
 }
 
-fn network_scan(uri: &str, sizes: IconSizes) -> Result<Vec<tab::Item>, String> {
+fn network_scan(uri: &str, sizes: IconSizes) -> Result<Vec<tab1::Item>, String> {
     let file = gio::File::for_uri(uri);
     let mut items = Vec::new();
     for info_res in file
@@ -117,7 +117,7 @@ fn network_scan(uri: &str, sizes: IconSizes) -> Result<Vec<tab::Item>, String> {
             )
         };
 
-        items.push(tab::Item {
+        items.push(tab1::Item {
             name,
             display_name,
             metadata,
@@ -206,7 +206,7 @@ enum Cmd {
     NetworkScan(
         String,
         IconSizes,
-        mpsc::Sender<Result<Vec<tab::Item>, String>>,
+        mpsc::Sender<Result<Vec<tab1::Item>, String>>,
     ),
     Unmount(MounterItem),
 }
@@ -479,7 +479,7 @@ impl Mounter for Gvfs {
         )
     }
 
-    fn network_scan(&self, uri: &str, sizes: IconSizes) -> Option<Result<Vec<tab::Item>, String>> {
+    fn network_scan(&self, uri: &str, sizes: IconSizes) -> Option<Result<Vec<tab1::Item>, String>> {
         let (items_tx, mut items_rx) = mpsc::channel(1);
         self.command_tx
             .send(Cmd::NetworkScan(uri.to_string(), sizes, items_tx))

@@ -10,7 +10,7 @@ use cosmic::{
 use hex_color::HexColor;
 use serde::{Deserialize, Serialize};
 
-use crate::{app::App, tab::View};
+use crate::{app::App, tab1::View as View1, tab2::View as View2};
 use crate::localize::LANGUAGE_SORTER;
 
 pub const CONFIG_VERSION: u64 = 1;
@@ -279,8 +279,8 @@ pub struct Config {
     pub show_button_row: bool,
     pub show_embedded_terminal: bool,
     pub show_second_panel: bool,
-    pub tab_left: TabConfig,
-    pub tab_right: TabConfig,
+    pub tab_left: TabConfig1,
+    pub tab_right: TabConfig2,
     pub paths_left: Vec<String>,
     pub paths_right: Vec<String>,
 }
@@ -376,8 +376,8 @@ impl Default for Config {
             show_button_row: true,
             show_embedded_terminal: true,
             show_second_panel: true,
-            tab_left: TabConfig::default(),
-            tab_right: TabConfig::default(),
+            tab_left: TabConfig1::default(),
+            tab_right: TabConfig2::default(),
             paths_left: Vec::new(),
             paths_right: Vec::new(),
         }
@@ -404,13 +404,13 @@ impl Default for DesktopConfig {
 
 /// Global and local [`crate::tab::Tab`] config.
 ///
-/// [`TabConfig`] contains options that are passed to each instance of [`crate::tab::Tab`].
+/// [`TabConfig1`] contains options that are passed to each instance of [`crate::tab::Tab`].
 /// These options are set globally through the main config, but each tab may change options
 /// locally. Local changes aren't saved to the main config.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, CosmicConfigEntry, Deserialize, Serialize)]
 #[serde(default)]
-pub struct TabConfig {
-    pub view: View,
+pub struct TabConfig1 {
+    pub view: View1,
     /// Show folders before files
     pub folders_first: bool,
     /// Show hidden files and folders
@@ -419,10 +419,38 @@ pub struct TabConfig {
     pub icon_sizes: IconSizes,
 }
 
-impl Default for TabConfig {
+impl Default for TabConfig1 {
     fn default() -> Self {
         Self {
-            view: View::List,
+            view: View1::List,
+            folders_first: true,
+            show_hidden: false,
+            icon_sizes: IconSizes::default(),
+        }
+    }
+}
+
+/// Global and local [`crate::tab::Tab`] config.
+///
+/// [`TabConfig2`] contains options that are passed to each instance of [`crate::tab::Tab`].
+/// These options are set globally through the main config, but each tab may change options
+/// locally. Local changes aren't saved to the main config.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, CosmicConfigEntry, Deserialize, Serialize)]
+#[serde(default)]
+pub struct TabConfig2 {
+    pub view: View2,
+    /// Show folders before files
+    pub folders_first: bool,
+    /// Show hidden files and folders
+    pub show_hidden: bool,
+    /// Icon zoom
+    pub icon_sizes: IconSizes,
+}
+
+impl Default for TabConfig2 {
+    fn default() -> Self {
+        Self {
+            view: View2::List,
             folders_first: true,
             show_hidden: false,
             icon_sizes: IconSizes::default(),

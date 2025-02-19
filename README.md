@@ -7,7 +7,7 @@ Dual Panel File manager for the COSMIC desktop environment. Think of a less clut
 This project is based on [COSMIC files](https://github.com/pop-os/cosmic-files) and the Terminal on [COSMIC term](https://github.com/pop-os/cosmic-term).
 
 > [!NOTE]
-> This project is early in the development. The GUI is quite far, but the Usage is still rough. Not bad for a weekend of work, though.
+> This project is still early in development. The basic functionality is working. Two panels, copying or moving files or tabs between them. A Terminal to run commands.
 
 ## Build the project from source
 

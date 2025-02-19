@@ -15,7 +15,7 @@ use crate::{
     err_str, fl,
     mime_icon::mime_for_path,
     spawn_detached::spawn_detached,
-    tab,
+    tab1,
 };
 
 pub use self::controller::{Controller, ControllerState};
@@ -33,7 +33,7 @@ fn handle_replace(
     file_to: PathBuf,
     multiple: bool,
 ) -> ReplaceResult {
-    let item_from = match tab::item_from_path(file_from, IconSizes::default()) {
+    let item_from = match tab1::item_from_path(file_from, IconSizes::default()) {
         Ok(ok) => ok,
         Err(err) => {
             log::warn!("{}", err);
@@ -41,7 +41,7 @@ fn handle_replace(
         }
     };
 
-    let item_to = match tab::item_from_path(file_to, IconSizes::default()) {
+    let item_to = match tab1::item_from_path(file_to, IconSizes::default()) {
         Ok(ok) => ok,
         Err(err) => {
             log::warn!("{}", err);
@@ -54,7 +54,7 @@ fn handle_replace(
         let _ = msg_tx
             .lock()
             .await
-            .send(Message::DialogPush(DialogPage::Replace {
+            .send(Message::DialogPush(DialogPage::Replace1 {
                 from: item_from,
                 to: item_to,
                 multiple,
@@ -999,7 +999,7 @@ mod tests {
 
         while let Some(msg) = rx.next().await {
             match msg {
-                Message::DialogPush(DialogPage::Replace { tx, .. }) => {
+                Message::DialogPush(DialogPage::Replace1 { tx, .. }) => {
                     debug!("[{id}] Replace request");
                     tx.send(ReplaceResult::Cancel).await.expect("Sending a response to a replace request should succeed")
 

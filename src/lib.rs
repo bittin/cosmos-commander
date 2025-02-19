@@ -20,8 +20,9 @@ mod mouse_area;
 mod mouse_reporter;
 pub mod operation;
 mod spawn_detached;
-use tab::Location;
-pub mod tab;
+use tab1::Location;
+pub mod tab1;
+pub mod tab2;
 mod terminal_box;
 mod terminal_theme;
 mod terminal;
@@ -73,12 +74,14 @@ pub fn desktop() -> Result<(), Box<dyn std::error::Error>> {
         settings = settings.no_main_window(true);
     }
 
-    let locations = vec![tab::Location::Desktop(desktop_dir(), String::new(), config.desktop)];
+    let locations1 = vec![Location::Desktop(desktop_dir(), String::new(), config.desktop)];
+    let locations2 = Vec::new();
     let flags = Flags {
         config_handler,
         config,
         mode: app::Mode::Desktop,
-        locations,
+        locations1,
+        locations2,
     };
     cosmic::app::run::<App>(settings, flags)?;
 
@@ -146,7 +149,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         config_handler,
         config,
         mode: app::Mode::App,
-        locations,
+        locations1: locations,
+        locations2: Vec::new(),
     };
     cosmic::app::run::<App>(settings, flags)?;
 

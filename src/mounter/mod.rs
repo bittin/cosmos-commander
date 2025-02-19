@@ -3,7 +3,7 @@ use once_cell::sync::Lazy;
 use std::{collections::BTreeMap, fmt, path::PathBuf, sync::Arc};
 use tokio::sync::mpsc;
 
-use crate::{config::IconSizes, tab};
+use crate::{config::IconSizes, tab1};
 
 #[cfg(feature = "gvfs")]
 mod gvfs;
@@ -95,7 +95,7 @@ pub trait Mounter: Send + Sync {
     //TODO: send result
     fn mount(&self, item: MounterItem) -> Task<()>;
     fn network_drive(&self, uri: String) -> Task<()>;
-    fn network_scan(&self, uri: &str, sizes: IconSizes) -> Option<Result<Vec<tab::Item>, String>>;
+    fn network_scan(&self, uri: &str, sizes: IconSizes) -> Option<Result<Vec<tab1::Item>, String>>;
     fn unmount(&self, item: MounterItem) -> Task<()>;
     fn subscription(&self) -> Subscription<MounterMessage>;
 }

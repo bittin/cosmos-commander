@@ -24,7 +24,7 @@ use cosmic::{
     Element, Renderer, Theme,
 };
 
-use crate::tab::DOUBLE_CLICK_DURATION;
+use crate::tab1::DOUBLE_CLICK_DURATION;
 
 /// Emit messages on mouse events.
 #[allow(missing_debug_implementations)]

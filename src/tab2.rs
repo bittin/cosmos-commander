@@ -58,9 +58,9 @@ use tokio::sync::mpsc;
 use walkdir::WalkDir;
 
 use crate::{
-    app::{Action, PreviewItem1, PreviewKind},
+    app::{Action, PreviewItem2, PreviewKind},
     clipboard::{ClipboardCopy, ClipboardKind, ClipboardPaste},
-    config::{DesktopConfig, IconSizes, TabConfig1, ICON_SCALE_MAX, ICON_SIZE_GRID},
+    config::{DesktopConfig, IconSizes, TabConfig2, ICON_SCALE_MAX, ICON_SIZE_GRID},
     dialog::DialogKind,
     fl,
     localize::{LANGUAGE_CHRONO, LANGUAGE_SORTER},
@@ -814,19 +814,6 @@ pub fn scan_recents(sizes: IconSizes) -> Vec<Item> {
     recents.into_iter().take(50).map(|(item, _)| item).collect()
 }
 
-pub fn scan_network(uri: &str, sizes: IconSizes) -> Vec<Item> {
-    for (_key, mounter) in MOUNTERS.iter() {
-        match mounter.network_scan(uri, sizes) {
-            Some(Ok(items)) => return items,
-            Some(Err(err)) => {
-                log::warn!("failed to scan {:?}: {}", uri, err);
-            }
-            None => {}
-        }
-    }
-    Vec::new()
-}
-
 //TODO: organize desktop items based on display
 pub fn scan_desktop(
     tab_path: &PathBuf,
@@ -973,7 +960,7 @@ impl Location {
             }
             Self::Trash => scan_trash(sizes),
             Self::Recents => scan_recents(sizes),
-            Self::Network(uri, _) => scan_network(uri, sizes),
+            Self::Network(_uri, _) => Vec::new(),
         };
         let parent_item_opt = match self.path_opt() {
             Some(path) => match item_from_path(path, sizes) {
@@ -1033,7 +1020,7 @@ pub enum Message {
     DoubleClick(Option<usize>),
     ClickRelease(Option<usize>),
     DragEnd(Option<usize>),
-    Config(TabConfig1),
+    Config(TabConfig2),
     ContextAction(Action),
     ContextMenu(Option<Point>),
     LocationContextMenuPoint(Option<Point>),
@@ -1669,7 +1656,7 @@ pub struct Tab {
     pub edit_location_id: widget::Id,
     pub history_i: usize,
     pub history: Vec<Location>,
-    pub config: TabConfig1,
+    pub config: TabConfig2,
     pub sort_name: HeadingOptions,
     pub sort_direction: bool,
     pub gallery: bool,
@@ -1742,7 +1729,7 @@ fn parse_hidden_file(path: &PathBuf) -> Vec<String> {
 }
 
 impl Tab {
-    pub fn new(location: Location, config: TabConfig1) -> Self {
+    pub fn new(location: Location, config: TabConfig2) -> Self {
         let history = vec![location.clone()];
         Self {
             location,
@@ -2329,8 +2316,8 @@ impl Tab {
                             //TODO: blocking code, run in command
                             match item_from_path(&path, IconSizes::default()) {
                                 Ok(item) => {
-                                    commands.push(Command::Preview(PreviewKind::Custom1(
-                                        PreviewItem1(item),
+                                    commands.push(Command::Preview(PreviewKind::Custom2(
+                                        PreviewItem2(item),
                                     )));
                                 }
                                 Err(err) => {
@@ -3618,7 +3605,7 @@ impl Tab {
             self.location_context_menu_index,
         ) {
             popover = popover
-                .popup(menu::location_context_menu1(index))
+                .popup(menu::location_context_menu2(index))
                 .position(widget::popover::Position::Point(point))
         }
 
@@ -3663,7 +3650,7 @@ impl Tab {
             ..
         } = theme::active().cosmic().spacing;
 
-        let TabConfig1 {
+        let TabConfig2 {
             show_hidden,
             icon_sizes,
             ..
@@ -3965,7 +3952,7 @@ impl Tab {
             ..
         } = theme::active().cosmic().spacing;
 
-        let TabConfig1 {
+        let TabConfig2 {
             show_hidden,
             icon_sizes,
             ..
@@ -4360,7 +4347,7 @@ impl Tab {
 
         if let Some(point) = self.context_menu {
             popover = popover
-                .popup(menu::context_menu1(&self, &key_binds))
+                .popup(menu::context_menu2(&self, &key_binds))
                 .position(widget::popover::Position::Point(point));
         }
         let mut tab_column = widget::column::with_capacity(3);
@@ -4733,10 +4720,10 @@ mod tests {
     use super::{respond_to_scroll_direction, scan_path, Location, Message, Tab};
     use crate::{
         app::test_utils::{
-            assert_eq_tab_path, empty_fs, eq_path_item, filter_dirs, read_dir_sorted, simple_fs,
-            tab_click_new, NAME_LEN, NUM_DIRS, NUM_FILES, NUM_HIDDEN, NUM_NESTED,
+            assert_eq_tab_path2, empty_fs, eq_path_item2, filter_dirs, read_dir_sorted, simple_fs,
+            tab_click_new2, NAME_LEN, NUM_DIRS, NUM_FILES, NUM_HIDDEN, NUM_NESTED,
         },
-        config::{IconSizes, TabConfig1},
+        config::{IconSizes, TabConfig2},
     };
 
     // Boilerplate for tab tests. Checks if simulated clicks selected items.
@@ -4745,7 +4732,7 @@ mod tests {
         modifiers: Modifiers,
         expected_selected: &[bool],
     ) -> io::Result<()> {
-        let (_fs, mut tab) = tab_click_new(NUM_FILES, NUM_NESTED, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
+        let (_fs, mut tab) = tab_click_new2(NUM_FILES, NUM_NESTED, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
 
         // Simulate clicks by triggering Message::Click
         for &click in clicks {
@@ -4777,7 +4764,7 @@ mod tests {
     fn tab_history() -> io::Result<(TempDir, Tab, Vec<PathBuf>)> {
         let fs = simple_fs(NUM_FILES, NUM_NESTED, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
         let path = fs.path();
-        let mut tab = Tab::new(Location::Path(path.into()), TabConfig1::default());
+        let mut tab = Tab::new(Location::Path(path.into()), TabConfig2::default());
 
         // All directories (simple_fs only produces one nested layer)
         let dirs: Vec<PathBuf> = filter_dirs(path)?
@@ -4827,7 +4814,7 @@ mod tests {
         assert!(entries
             .into_iter()
             .zip(actual.into_iter())
-            .all(|(path, item)| eq_path_item(&path, &item)));
+            .all(|(path, item)| eq_path_item2(&path, &item)));
 
         Ok(())
     }
@@ -4874,7 +4861,7 @@ mod tests {
             .next()
             .expect("temp directory should have at least one directory");
 
-        let mut tab = Tab::new(Location::Path(path.to_owned()), TabConfig1::default());
+        let mut tab = Tab::new(Location::Path(path.to_owned()), TabConfig2::default());
         debug!(
             "Emitting Message::Location(Location::Path(\"{}\"))",
             next_dir.display()
@@ -4887,7 +4874,7 @@ mod tests {
         // Validate that the tab's path updated
         // NOTE: `items_opt` is set to None with Message::Location so this ONLY checks for equal paths
         // If item contents are NOT None then this needs to be reevaluated for correctness
-        assert_eq_tab_path(&tab, &next_dir);
+        assert_eq_tab_path2(&tab, &next_dir);
         assert!(
             tab.items_opt.is_none(),
             "Tab's `items` is not None which means this test needs to be updated"
@@ -4904,7 +4891,7 @@ mod tests {
 
     #[test]
     fn tab_click_double_opens_folder() -> io::Result<()> {
-        let (fs, mut tab) = tab_click_new(NUM_FILES, NUM_NESTED, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
+        let (fs, mut tab) = tab_click_new2(NUM_FILES, NUM_NESTED, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
         let path = fs.path();
 
         // Simulate double clicking second directory
@@ -4919,7 +4906,7 @@ mod tests {
             .expect("should be at least two directories");
 
         // Location should have changed to second_dir
-        assert_eq_tab_path(&tab, &second_dir);
+        assert_eq_tab_path2(&tab, &second_dir);
 
         Ok(())
     }
@@ -4940,13 +4927,13 @@ mod tests {
             debug!("Emitting Message::GoPrevious to rewind to the start",);
             tab.update(Message::GoPrevious, Modifiers::empty());
         }
-        assert_eq_tab_path(&tab, path);
+        assert_eq_tab_path2(&tab, path);
 
         // Back to the future. Directories should be in the order they were opened.
         for dir in dirs {
             debug!("Emitting Message::GoNext",);
             tab.update(Message::GoNext, Modifiers::empty());
-            assert_eq_tab_path(&tab, &dir);
+            assert_eq_tab_path2(&tab, &dir);
         }
 
         Ok(())
@@ -4958,11 +4945,11 @@ mod tests {
         let path = fs.path();
 
         for dir in dirs.into_iter().rev() {
-            assert_eq_tab_path(&tab, &dir);
+            assert_eq_tab_path2(&tab, &dir);
             debug!("Emitting Message::GoPrevious",);
             tab.update(Message::GoPrevious, Modifiers::empty());
         }
-        assert_eq_tab_path(&tab, path);
+        assert_eq_tab_path2(&tab, path);
 
         Ok(())
     }
@@ -5006,16 +4993,16 @@ mod tests {
     fn tab_empty_history_does_nothing_on_prev_next() -> io::Result<()> {
         let fs = simple_fs(0, NUM_NESTED, NUM_DIRS, 0, NAME_LEN)?;
         let path = fs.path();
-        let mut tab = Tab::new(Location::Path(path.into()), TabConfig1::default());
+        let mut tab = Tab::new(Location::Path(path.into()), TabConfig2::default());
 
         // Tab's location shouldn't change if GoPrev or GoNext is triggered
         debug!("Emitting Message::GoPrevious",);
         tab.update(Message::GoPrevious, Modifiers::empty());
-        assert_eq_tab_path(&tab, path);
+        assert_eq_tab_path2(&tab, path);
 
         debug!("Emitting Message::GoNext",);
         tab.update(Message::GoNext, Modifiers::empty());
-        assert_eq_tab_path(&tab, path);
+        assert_eq_tab_path2(&tab, path);
 
         Ok(())
     }
@@ -5028,12 +5015,12 @@ mod tests {
             .next()
             .expect("should be at least one directory");
 
-        let mut tab = Tab::new(Location::Path(next_dir.clone()), TabConfig1::default());
+        let mut tab = Tab::new(Location::Path(next_dir.clone()), TabConfig2::default());
         // This will eventually yield false once root is hit
         while next_dir.pop() {
             debug!("Emitting Message::LocationUp",);
             tab.update(Message::LocationUp, Modifiers::empty());
-            assert_eq_tab_path(&tab, &next_dir);
+            assert_eq_tab_path2(&tab, &next_dir);
         }
 
         Ok(())
@@ -5061,7 +5048,7 @@ mod tests {
         }
 
         debug!("Creating tab for directory of long file names");
-        Tab::new(Location::Path(path.into()), TabConfig1::default());
+        Tab::new(Location::Path(path.into()), TabConfig2::default());
 
         Ok(())
     }

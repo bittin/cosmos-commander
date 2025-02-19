@@ -35,14 +35,14 @@ use std::{
 };
 
 use crate::{
-    app::{Action, ContextPage, Message as AppMessage, PreviewItem, PreviewKind},
-    config::{Config, Favorite, IconSizes, TabConfig},
+    app::{Action, ContextPage, Message as AppMessage, PreviewItem1, PreviewItem2, PreviewKind},
+    config::{Config, Favorite, IconSizes, TabConfig1},
     fl, home_dir,
     key_bind::key_binds,
     localize::LANGUAGE_SORTER,
     menu,
     mounter::{MounterItem, MounterItems, MounterKey, MounterMessage, MOUNTERS},
-    tab::{self, ItemMetadata, Location, Tab},
+    tab1,
 };
 
 #[derive(Clone, Debug)]
@@ -328,9 +328,10 @@ enum Message {
     SearchClear,
     SearchInput(String),
     #[allow(clippy::enum_variant_names)]
-    TabMessage(tab::Message),
-    TabRescan(Location, Option<tab::Item>, Vec<tab::Item>),
-    TabView(tab::View),
+    TabMessage(tab1::Message),
+    TabRescan(tab1::Location, Option<tab1::Item>, Vec<tab1::Item>),
+    TabViewLeft(tab1::View),
+    TabViewRight(tab1::View),
     ToggleFoldersFirst,
     ZoomDefault,
     ZoomIn,
@@ -344,7 +345,7 @@ impl From<AppMessage> for Message {
             AppMessage::Preview(_entity_opt) => Message::Preview,
             AppMessage::SearchActivate => Message::SearchActivate,
             AppMessage::TabMessage(_entity_opt, tab_message) => Message::TabMessage(tab_message),
-            AppMessage::TabView(_entity_opt, view) => Message::TabView(view),
+            AppMessage::TabViewLeft(_entity_opt, view) => Message::TabViewLeft(view),
             AppMessage::ToggleFoldersFirst => Message::ToggleFoldersFirst,
             AppMessage::ZoomDefault(_entity_opt) => Message::ZoomDefault,
             AppMessage::ZoomIn(_entity_opt) => Message::ZoomIn,
@@ -354,6 +355,7 @@ impl From<AppMessage> for Message {
                 log::warn!("{unsupported:?} not supported in dialog mode");
                 Message::None
             }
+            _ => Message::None
         }
     }
 }
@@ -400,7 +402,7 @@ struct App {
     nav_model: segmented_button::SingleSelectModel,
     result_opt: Option<DialogResult>,
     search_id: widget::Id,
-    tab: Tab,
+    tab: tab1::Tab,
     key_binds: HashMap<KeyBind, Action>,
     watcher_opt: Option<(Debouncer<RecommendedWatcher, FileIdMap>, HashSet<PathBuf>)>,
 }
@@ -471,13 +473,13 @@ impl App {
             .into()
     }
 
-    fn preview<'a>(&'a self, kind: &'a PreviewKind) -> Element<'a, tab::Message> {
+    fn preview<'a>(&'a self, kind: &'a PreviewKind) -> Element<'a, tab1::Message> {
         let mut children = Vec::with_capacity(1);
         match kind {
-            PreviewKind::Custom(PreviewItem(item)) => {
-                children.push(item.preview_view(None, IconSizes::default()));
+            PreviewKind::Custom1(PreviewItem1(item)) => {
+                children.push(item.preview_view(None, IconSizes::default()).into());
             }
-            PreviewKind::Location(location) => {
+            PreviewKind::Location1(location) => {
                 if let Some(items) = self.tab.items_opt() {
                     for item in items.iter() {
                         if item.location_opt.as_ref() == Some(location) {
@@ -506,6 +508,7 @@ impl App {
                     }
                 }
             }
+            _ => {}
         }
         widget::column::with_children(children).into()
     }
@@ -532,7 +535,7 @@ impl App {
 
     fn search_get(&self) -> Option<&str> {
         match &self.tab.location {
-            Location::Search(_, term, ..) => Some(term),
+            tab1::Location::Search(_, term, ..) => Some(term),
             _ => None,
         }
     }
@@ -540,8 +543,8 @@ impl App {
     fn search_set(&mut self, term_opt: Option<String>) -> Task<Message> {
         let location_opt = match term_opt {
             Some(term) => match &self.tab.location {
-                Location::Path(path) | Location::Search(path, ..) => Some((
-                    Location::Search(
+                tab1::Location::Path(path) | tab1::Location::Search(path, ..) => Some((
+                    tab1::Location::Search(
                         path.to_path_buf(),
                         term,
                         self.tab.config.show_hidden,
@@ -552,7 +555,7 @@ impl App {
                 _ => None,
             },
             None => match &self.tab.location {
-                Location::Search(path, ..) => Some((Location::Path(path.to_path_buf()), false)),
+                tab1::Location::Search(path, ..) => Some((tab1::Location::Path(path.to_path_buf()), false)),
                 _ => None,
             },
         };
@@ -577,10 +580,10 @@ impl App {
         Task::none()
     }
 
-    fn activate_nav_model_location(&mut self, location: &Location) {
+    fn activate_nav_model_location(&mut self, location: &tab1::Location) {
         let nav_bar_id = self.nav_model.iter().find(|&id| {
             self.nav_model
-                .data::<Location>(id)
+                .data::<tab1::Location>(id)
                 .map(|l| l == location)
                 .unwrap_or_default()
         });
@@ -599,7 +602,7 @@ impl App {
         nav_model = nav_model.insert(|b| {
             b.text(fl!("recents"))
                 .icon(widget::icon::from_name("document-open-recent-symbolic"))
-                .data(Location::Recents)
+                .data(tab1::Location::Recents)
         });
 
         for favorite in self.flags.config.favorites.iter() {
@@ -615,7 +618,7 @@ impl App {
                     b.text(name.clone())
                         .icon(
                             widget::icon::icon(if path.is_dir() {
-                                tab::folder_icon_symbolic(&path, 16)
+                                tab1::folder_icon_symbolic(&path, 16)
                             } else {
                                 widget::icon::from_name("text-x-generic-symbolic")
                                     .size(16)
@@ -623,7 +626,7 @@ impl App {
                             })
                             .size(16),
                         )
-                        .data(Location::Path(path.clone()))
+                        .data(tab1::Location::Path(path.clone()))
                 });
             }
         }
@@ -642,7 +645,7 @@ impl App {
             nav_model = nav_model.insert(|mut b| {
                 b = b.text(item.name()).data(MounterData(key, item.clone()));
                 if let Some(path) = item.path() {
-                    b = b.data(Location::Path(path.clone()));
+                    b = b.data(tab1::Location::Path(path.clone()));
                 }
                 if let Some(icon) = item.icon(true) {
                     b = b.icon(widget::icon::icon(icon).size(16));
@@ -748,7 +751,7 @@ impl Application for App {
         let title = flags.kind.title();
         let accept_label = flags.kind.accept_label();
 
-        let location = Location::Path(match &flags.path_opt {
+        let location = tab1::Location::Path(match &flags.path_opt {
             Some(path) => path.to_path_buf(),
             None => match env::current_dir() {
                 Ok(path) => path,
@@ -756,14 +759,14 @@ impl Application for App {
             },
         });
 
-        let tab_config = TabConfig {
-            view: tab::View::List,
+        let tab_config = TabConfig1 {
+            view: tab1::View::List,
             folders_first: false,
             ..Default::default()
         };
-        let mut tab = Tab::new(location, tab_config);
-        tab.mode = tab::Mode::Dialog(flags.kind.clone());
-        tab.sort_name = tab::HeadingOptions::Modified;
+        let mut tab = tab1::Tab::new(location, tab_config);
+        tab.mode = tab1::Mode::Dialog(flags.kind.clone());
+        tab.sort_name = tab1::HeadingOptions::Modified;
         tab.sort_direction = false;
 
         let key_binds = key_binds(&tab.mode);
@@ -979,7 +982,7 @@ impl Application for App {
             _ => false,
         };
         elements
-            .push(menu::dialog_menu(&self.tab, &self.key_binds, show_details).map(Message::from));
+            .push(menu::dialog_menu1(&self.tab, &self.key_binds, show_details).map(Message::from));
 
         elements
     }
@@ -1023,8 +1026,8 @@ impl Application for App {
 
     fn on_nav_select(&mut self, entity: segmented_button::Entity) -> Task<Message> {
         self.nav_model.activate(entity);
-        if let Some(location) = self.nav_model.data::<Location>(entity) {
-            let message = Message::TabMessage(tab::Message::Location(location.clone()));
+        if let Some(location) = self.nav_model.data::<tab1::Location>(entity) {
+            let message = Message::TabMessage(tab1::Message::Location(location.clone()));
             return self.update(message);
         }
 
@@ -1113,8 +1116,8 @@ impl Application for App {
                             match fs::create_dir(&path) {
                                 Ok(()) => {
                                     // cd to directory
-                                    let message = Message::TabMessage(tab::Message::Location(
-                                        Location::Path(path.clone()),
+                                    let message = Message::TabMessage(tab1::Message::Location(
+                                        tab1::Location::Path(path.clone()),
                                     ));
                                     return self.update(message);
                                 }
@@ -1177,7 +1180,7 @@ impl Application for App {
                                     }
                                 }
                                 if !still_mounted {
-                                    unmounted.push(Location::Path(old_path));
+                                    unmounted.push(tab1::Location::Path(old_path));
                                 }
                             }
                         }
@@ -1187,7 +1190,7 @@ impl Application for App {
                 // Go back to home in any tabs that were unmounted
                 let mut commands = Vec::new();
                 {
-                    let home_location = Location::Path(home_dir());
+                    let home_location = tab1::Location::Path(home_dir());
                     if unmounted.contains(&self.tab.location) {
                         self.tab.change_location(&home_location, None);
                         commands.push(self.update_watcher());
@@ -1236,7 +1239,7 @@ impl Application for App {
                                                     //TODO: reload more, like mime types?
                                                     match fs::metadata(event_path) {
                                                         Ok(new_metadata) => {
-                                                            if let ItemMetadata::Path {
+                                                            if let tab1::ItemMetadata::Path {
                                                                 metadata,
                                                                 ..
                                                             } = &mut item.metadata
@@ -1302,8 +1305,8 @@ impl Application for App {
                     if path_is_dir != self.flags.kind.is_dir() {
                         if path_is_dir && paths.len() == 1 {
                             // If the only selected item is a directory and we are selecting files, cd to it
-                            let message = Message::TabMessage(tab::Message::Location(
-                                Location::Path(path.clone()),
+                            let message = Message::TabMessage(tab1::Message::Location(
+                                tab1::Location::Path(path.clone()),
                             ));
                             return self.update(message);
                         } else {
@@ -1321,7 +1324,7 @@ impl Application for App {
 
                 // If we are in directory mode, return the current directory
                 if self.flags.kind.is_dir() {
-                    if let Location::Path(tab_path) = &self.tab.location {
+                    if let tab1::Location::Path(tab_path) = &self.tab.location {
                         self.result_opt = Some(DialogResult::Open(vec![tab_path.clone()]));
                         return window::close(self.flags.window_id);
                     }
@@ -1343,8 +1346,8 @@ impl Application for App {
                             let path = tab_path.join(filename);
                             if path.is_dir() {
                                 // cd to directory
-                                let message = Message::TabMessage(tab::Message::Location(
-                                    Location::Path(path.clone()),
+                                let message = Message::TabMessage(tab1::Message::Location(
+                                    tab1::Location::Path(path.clone()),
                                 ));
                                 return self.update(message);
                             } else if !replace && path.exists() {
@@ -1374,7 +1377,7 @@ impl Application for App {
             }
             Message::TabMessage(tab_message) => {
                 let click_i_opt = match tab_message {
-                    tab::Message::Click(click_i_opt) => click_i_opt,
+                    tab1::Message::Click(click_i_opt) => click_i_opt,
                     _ => None,
                 };
 
@@ -1396,34 +1399,34 @@ impl Application for App {
                 let mut commands = Vec::new();
                 for tab_command in tab_commands {
                     match tab_command {
-                        tab::Command::Action(action) => {
+                        tab1::Command::Action(action) => {
                             commands.push(self.update(Message::from(action.message())));
                         }
-                        tab::Command::ChangeLocation(_tab_title, _tab_path, _selection_paths) => {
+                        tab1::Command::ChangeLocation(_tab_title, _tab_path, _selection_paths) => {
                             commands.push(Task::batch([self.update_watcher(), self.rescan_tab()]));
                         }
-                        tab::Command::Iced(iced_command) => {
+                        tab1::Command::Iced(iced_command) => {
                             commands.push(
                                 iced_command.0.map(|tab_message| {
                                     message::app(Message::TabMessage(tab_message))
                                 }),
                             );
                         }
-                        tab::Command::OpenFile(_item_path) => {
+                        tab1::Command::OpenFile(_item_path) => {
                             if self.flags.kind.save() {
                                 commands.push(self.update(Message::Save(false)));
                             } else {
                                 commands.push(self.update(Message::Open));
                             }
                         }
-                        tab::Command::Preview(kind) => {
+                        tab1::Command::Preview(kind) => {
                             self.context_page = ContextPage::Preview(None, kind);
                             self.set_show_context(true);
                         }
-                        tab::Command::WindowDrag => {
+                        tab1::Command::WindowDrag => {
                             commands.push(window::drag(self.flags.window_id));
                         }
-                        tab::Command::WindowToggleMaximize => {
+                        tab1::Command::WindowToggleMaximize => {
                             commands.push(window::toggle_maximize(self.flags.window_id));
                         }
                         unsupported => {
@@ -1514,15 +1517,18 @@ impl Application for App {
                     }
                 }
             }
-            Message::TabView(view) => {
+            Message::TabViewLeft(view) => {
+                self.tab.config.view = view;
+            }
+            Message::TabViewRight(view) => {
                 self.tab.config.view = view;
             }
             Message::ToggleFoldersFirst => {
                 self.tab.config.folders_first = !self.tab.config.folders_first;
             }
             Message::ZoomDefault => match self.tab.config.view {
-                tab::View::List => self.tab.config.icon_sizes.list = 100.try_into().unwrap(),
-                tab::View::Grid => self.tab.config.icon_sizes.grid = 100.try_into().unwrap(),
+                tab1::View::List => self.tab.config.icon_sizes.list = 100.try_into().unwrap(),
+                tab1::View::Grid => self.tab.config.icon_sizes.grid = 100.try_into().unwrap(),
             },
             Message::ZoomIn => {
                 let zoom_in = |size: &mut NonZeroU16, min: u16, max: u16| {
@@ -1539,8 +1545,8 @@ impl Application for App {
                     }
                 };
                 match self.tab.config.view {
-                    tab::View::List => zoom_in(&mut self.tab.config.icon_sizes.list, 50, 500),
-                    tab::View::Grid => zoom_in(&mut self.tab.config.icon_sizes.grid, 50, 500),
+                    tab1::View::List => zoom_in(&mut self.tab.config.icon_sizes.list, 50, 500),
+                    tab1::View::Grid => zoom_in(&mut self.tab.config.icon_sizes.grid, 50, 500),
                 }
             }
             Message::ZoomOut => {
@@ -1558,8 +1564,8 @@ impl Application for App {
                     }
                 };
                 match self.tab.config.view {
-                    tab::View::List => zoom_out(&mut self.tab.config.icon_sizes.list, 50, 500),
-                    tab::View::Grid => zoom_out(&mut self.tab.config.icon_sizes.grid, 50, 500),
+                    tab1::View::List => zoom_out(&mut self.tab.config.icon_sizes.list, 50, 500),
+                    tab1::View::Grid => zoom_out(&mut self.tab.config.icon_sizes.grid, 50, 500),
                 }
             }
         }

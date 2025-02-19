@@ -5,10 +5,10 @@ use cosmic::{
 };
 use std::collections::HashMap;
 
-use crate::{app::Action, tab};
+use crate::{app::Action, tab1};
 
 //TODO: load from config
-pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
+pub fn key_binds(mode: &tab1::Mode) -> HashMap<KeyBind, Action> {
     let mut key_binds = HashMap::new();
 
     macro_rules! bind {
@@ -59,7 +59,7 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
     bind!([Ctrl], Key::Character("-".into()), ZoomOut);
 
     // App-only keys
-    if matches!(mode, tab::Mode::App) {
+    if matches!(mode, tab1::Mode::App) {
         bind!([Ctrl], Key::Character("d".into()), AddToSidebar);
         bind!([Ctrl], Key::Named(Named::Enter), OpenInNewTab);
         bind!([Ctrl], Key::Character(",".into()), Settings);
@@ -73,7 +73,7 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
     }
 
     // App and desktop only keys
-    if matches!(mode, tab::Mode::App | tab::Mode::Desktop) {
+    if matches!(mode, tab1::Mode::App | tab1::Mode::Desktop) {
         bind!([Ctrl], Key::Character("c".into()), Copy);
         bind!([Ctrl], Key::Character("x".into()), Cut);
         bind!([], Key::Named(Named::Delete), MoveToTrash);
@@ -83,7 +83,7 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
     }
 
     // App and dialog only keys
-    if matches!(mode, tab::Mode::App | tab::Mode::Dialog(_)) {
+    if matches!(mode, tab1::Mode::App | tab1::Mode::Dialog(_)) {
         bind!([Ctrl], Key::Character("l".into()), EditLocation);
         bind!([Alt], Key::Named(Named::ArrowRight), HistoryNext);
         bind!([Alt], Key::Named(Named::ArrowLeft), HistoryPrevious);
