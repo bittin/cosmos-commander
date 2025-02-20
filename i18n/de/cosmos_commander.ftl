@@ -1,4 +1,4 @@
-cosmic-commander = COSMIC Commmander
+cosmos-commander = COSMIC Commmander
 empty-folder = Leerer Ordner
 empty-folder-hidden = Leerer Ordner (hat versteckte Elemente)
 no-results = Keine Ergebnisse gefunden

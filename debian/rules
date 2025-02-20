@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-export DESTDIR = debian/cosmic-commander
+export DESTDIR = debian/cosmos-commander
 export VENDOR ?= 1
 
 %:

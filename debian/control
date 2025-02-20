@@ -1,4 +1,4 @@
-Source: cosmic-commander
+Source: cosmos-commander
 Section: admin
 Priority: optional
 Maintainer: Alexander Schwarzkopf <progs@fangornsrealm.eu>
@@ -9,9 +9,9 @@ Build-Depends:
     pkg-config,
     rust-all,
 Standards-Version: 4.6.2
-Homepage: https://github.com/fangornsrealm/cosmic-commander
+Homepage: https://github.com/fangornsrealm/cosmos-commander
 
-Package: cosmic-commander
+Package: cosmos-commander
 Architecture: amd64 arm64
 Depends: ${misc:Depends}, ${shlibs:Depends},
 Description: Dual-pane file manager for COSMIC desktop

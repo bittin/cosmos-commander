@@ -1244,10 +1244,10 @@ impl ItemThumbnail {
         // Try external thumbnailers
         for thumbnailer in thumbnailer(&mime) {
             let prefix = if thumbnailer.exec.starts_with("evince-thumbnailer ") {
-                //TODO: apparmor config for evince-thumbnailer does not allow /tmp/cosmic-commander*
+                //TODO: apparmor config for evince-thumbnailer does not allow /tmp/cosmos-commander*
                 "gnome-desktop-"
             } else {
-                "cosmic-commander-"
+                "cosmos-commander-"
             };
             let file = match tempfile::NamedTempFile::with_prefix(prefix) {
                 Ok(ok) => ok,
@@ -4814,7 +4814,7 @@ mod tests {
         let fs = simple_fs(NUM_FILES, NUM_HIDDEN, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
         let path = fs.path();
 
-        // Read directory entries and sort as cosmic-commander does
+        // Read directory entries and sort as cosmos-commander does
         let entries = read_dir_sorted(path)?;
 
         debug!("Calling scan_path(\"{}\")", path.display());

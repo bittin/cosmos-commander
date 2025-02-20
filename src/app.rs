@@ -953,7 +953,7 @@ impl App {
                     let _ = recently_used_xbel::update_recently_used(
                         path,
                         App::APP_ID.to_string(),
-                        "cosmic-commander".to_string(),
+                        "cosmos-commander".to_string(),
                         None,
                     );
                     return;
@@ -970,7 +970,7 @@ impl App {
                 let _ = recently_used_xbel::update_recently_used(
                     path,
                     App::APP_ID.to_string(),
-                    "cosmic-commander".to_string(),
+                    "cosmos-commander".to_string(),
                     None,
                 );
             }
@@ -1900,13 +1900,13 @@ impl App {
         let window_title;
         if self.active_panel == 1 {
             window_title = match self.tab_model1.text(self.tab_model1.active()) {
-                Some(tab_title) => format!("{tab_title} — {}", fl!("cosmic-commander")),
-                None => fl!("cosmic-commander"),
+                Some(tab_title) => format!("{tab_title} — {}", fl!("cosmos-commander")),
+                None => fl!("cosmos-commander"),
             };
         } else {
             window_title = match self.tab_model2.text(self.tab_model2.active()) {
-                Some(tab_title) => format!("{tab_title} — {}", fl!("cosmic-commander")),
-                None => fl!("cosmic-commander"),
+                Some(tab_title) => format!("{tab_title} — {}", fl!("cosmos-commander")),
+                None => fl!("cosmos-commander"),
             };
         }
         if let Some(window_id) = &self.window_id_opt {
@@ -2018,18 +2018,18 @@ impl App {
 
     fn about(&self) -> Element<Message> {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
-        let repository = "https://github.com/fangornsrealm/cosmic-commander";
+        let repository = "https://github.com/fangornsrealm/cosmos-commander";
         let hash = env!("VERGEN_GIT_SHA");
         let short_hash: String = hash.chars().take(7).collect();
         let date = env!("VERGEN_GIT_COMMIT_DATE");
         widget::column::with_children(vec![
             widget::svg(widget::svg::Handle::from_memory(
                 &include_bytes!(
-                    "../res/icons/hicolor/128x128/apps/eu.fangornsrealm.Cosmic-Commander.svg"
+                    "../res/icons/hicolor/128x128/apps/eu.fangornsrealm.cosmos-commander.svg"
                 )[..],
             ))
             .into(),
-            widget::text::title3(fl!("cosmic-commander")).into(),
+            widget::text::title3(fl!("cosmos-commander")).into(),
             widget::button::link(repository)
                 .on_press(Message::LaunchUrl(repository.to_string()))
                 .padding(0)
@@ -2720,7 +2720,7 @@ impl Application for App {
     type Message = Message;
 
     /// The unique application ID to supply to the window manager.
-    const APP_ID: &'static str = "eu.fangornsrealm.Cosmic-Commander";
+    const APP_ID: &'static str = "eu.fangornsrealm.cosmos-commander";
 
     fn core(&self) -> &Core {
         &self.core
@@ -3375,7 +3375,7 @@ impl Application for App {
                 {
                     // Use the dialog ID to make it float
                     settings.platform_specific.application_id =
-                        "eu.fangornsrealm.Cosmic-CommanderDialog".to_string();
+                        "eu.fangornsrealm.cosmos-commanderDialog".to_string();
                 }
 
                 let (id, command) = window::open(settings);
@@ -3464,7 +3464,7 @@ impl Application for App {
                                             let _ = recently_used_xbel::update_recently_used(
                                                 &path,
                                                 App::APP_ID.to_string(),
-                                                "cosmic-commander".to_string(),
+                                                "cosmos-commander".to_string(),
                                                 None,
                                             );
                                         }
@@ -4773,7 +4773,7 @@ impl Application for App {
                             {
                                 // Use the dialog ID to make it float
                                 settings.platform_specific.application_id =
-                                    "eu.fangornsrealm.Cosmic-CommanderDialog".to_string();
+                                    "eu.fangornsrealm.cosmos-commanderDialog".to_string();
                             }
 
                             let (id, command) = window::open(settings);
@@ -5492,12 +5492,12 @@ impl Application for App {
                         },
                         tab1::Command::OpenTrash => {
                             //TODO: use handler for x-scheme-handler/trash and open trash:///
-                            let mut command = process::Command::new("cosmic-commander");
+                            let mut command = process::Command::new("cosmos-commander");
                             command.arg("--trash");
                             match spawn_detached(&mut command) {
                                 Ok(()) => {}
                                 Err(err) => {
-                                    log::warn!("failed to run cosmic-commander --trash: {}", err)
+                                    log::warn!("failed to run cosmos-commander --trash: {}", err)
                                 }
                             }
                         }
@@ -5609,12 +5609,12 @@ impl Application for App {
                         },
                         tab2::Command::OpenTrash => {
                             //TODO: use handler for x-scheme-handler/trash and open trash:///
-                            let mut command = process::Command::new("cosmic-commander");
+                            let mut command = process::Command::new("cosmos-commander");
                             command.arg("--trash");
                             match spawn_detached(&mut command) {
                                 Ok(()) => {}
                                 Err(err) => {
-                                    log::warn!("failed to run cosmic-commander --trash: {}", err)
+                                    log::warn!("failed to run cosmos-commander --trash: {}", err)
                                 }
                             }
                         }
@@ -6279,7 +6279,7 @@ impl Application for App {
                         _ => {}
                     }
                 }
-                // Open the selected path in a new cosmic-commander window.
+                // Open the selected path in a new cosmos-commander window.
                 NavMenuAction::OpenInNewWindow(entity) => {
                     if let Some(Location1::Path(path)) = self.nav_model.data::<Location1>(entity) {
                         match env::current_exe() {
@@ -6389,7 +6389,7 @@ impl Application for App {
                                 pointer_interactivity: true,
                                 anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
                                 output: IcedOutput::Output(output),
-                                namespace: "cosmic-commander-applet".into(),
+                                namespace: "cosmos-commander-applet".into(),
                                 size: Some((None, None)),
                                 margin: IcedMargin {
                                     top: 0,

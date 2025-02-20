@@ -12,5 +12,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         libc::mallopt(libc::M_MMAP_THRESHOLD, 65536);
     }
 
-    cosmic_commander::main()
+    cosmos_commander::main()
 }

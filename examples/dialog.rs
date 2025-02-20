@@ -32,7 +32,7 @@ impl Application for App {
     type Flags = ();
     type Message = Message;
 
-    const APP_ID: &'static str = "eu.fangornsrealm.Cosmic-CommanderDialogExample";
+    const APP_ID: &'static str = "eu.fangornsrealm.cosmos-commanderDialogExample";
 
     fn core(&self) -> &Core {
         &self.core
