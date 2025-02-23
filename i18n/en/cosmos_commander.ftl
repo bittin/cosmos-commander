@@ -1,4 +1,4 @@
-cosmos-commander = COSMIC Commmander
+cosmos-commander = COSMOS Commmander
 empty-folder = Empty folder
 empty-folder-hidden = Empty folder (has hidden items)
 no-results = No results found
@@ -19,6 +19,7 @@ mounted-drives = Mounted drives
 trash-folder-icon = Trash folder icon
 icon-size-and-spacing = Icon size and spacing
 icon-size = Icon size
+grid-spacing = Grid spacing
 
 # List view
 name = Name
@@ -38,6 +39,9 @@ resume = Resume
 
 ## Compress Dialog
 create-archive = Create archive
+
+## Extract Dialog
+extract-password-required = Password required
 
 ## Empty Trash Dialog
 empty-trash = Empty trash
@@ -100,9 +104,22 @@ open-with = Open with
 owner = Owner
 group = Group
 other = Other
-read = Read
-write = Write
-execute = Execute
+### Mode 0
+none = None
+### Mode 1 (unusual)
+execute-only = Execute-only
+### Mode 2 (unusual)
+write-only = Write-only
+### Mode 3 (unusual)
+write-execute = Write and execute
+### Mode 4
+read-only = Read-only
+### Mode 5
+read-execute = Read and execute
+### Mode 6
+read-write = Read and write
+### Mode 7
+read-write-execute = Read, write, and execute
 
 # Context Pages
 
@@ -262,9 +279,11 @@ zoom-in = Zoom in
 default-size = Default size
 zoom-out = Zoom out
 view = View
+features = Features
 show-button-row = Show Button Row
 show-embedded-terminal = Show embedded Terminal
 show-second-panel = Show second Filemanager panel
+queue-file-operations = Execute File Operations one after the other
 f2-rename = F2 Rename
 f3-view = F3 View
 f4-edit = F4 Edit
@@ -282,7 +301,7 @@ show-hidden-files = Show hidden files
 list-directories-first = List directories first
 gallery-preview = Gallery preview
 menu-settings = Settings...
-menu-about = About Cosmic Commander...
+menu-about = About Cosmos Commander...
 
 ## Sort
 sort = Sort

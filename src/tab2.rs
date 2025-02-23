@@ -46,6 +46,7 @@ use std::{
     cell::Cell,
     cmp::Ordering,
     collections::HashMap,
+    error::Error,
     fmt::{self, Display},
     fs::{self, File, Metadata},
     io::{BufRead, BufReader},
@@ -83,8 +84,8 @@ const MAX_SEARCH_RESULTS: usize = 200;
 const THUMBNAIL_SIZE: u32 = (ICON_SIZE_GRID as u32) * (ICON_SCALE_MAX as u32);
 
 //TODO: adjust for locales?
-const DATE_TIME_FORMAT: &'static str = "%b %-d, %-Y, %-I:%M %p";
-const TIME_FORMAT: &'static str = "%-I:%M %p";
+const DATE_TIME_FORMAT: &str = "%b %-d, %-Y, %-I:%M %p";
+const TIME_FORMAT: &str = "%-I:%M %p";
 static SPECIAL_DIRS: Lazy<HashMap<PathBuf, &'static str>> = Lazy::new(|| {
     let mut special_dirs = HashMap::new();
     if let Some(dir) = dirs::document_dir() {
@@ -234,6 +235,43 @@ pub fn folder_icon_symbolic(path: &PathBuf, icon_size: u16) -> widget::icon::Han
     .handle()
 }
 
+fn tab_complete(path: &Path) -> Result<Vec<(String, PathBuf)>, Box<dyn Error>> {
+    let parent = if path.exists() {
+        // Do not show completion if already on an existing path
+        return Ok(Vec::new());
+    } else {
+        path.parent()
+            .ok_or_else(|| format!("path has no parent {:?}", path))?
+    };
+
+    let child_os = path.strip_prefix(&parent)?;
+    let child = child_os
+        .to_str()
+        .ok_or_else(|| format!("invalid UTF-8 {:?}", child_os))?;
+
+    let pattern = format!("^{}", regex::escape(&child));
+    let regex = regex::RegexBuilder::new(&pattern)
+        .case_insensitive(true)
+        .build()?;
+
+    let mut completions = Vec::new();
+    for entry_res in fs::read_dir(&parent)? {
+        let entry = entry_res?;
+        let file_name_os = entry.file_name();
+        let Some(file_name) = file_name_os.to_str() else {
+            continue;
+        };
+        if regex.is_match(&file_name) {
+            completions.push((file_name.to_string(), entry.path()));
+        }
+    }
+
+    completions.sort_by(|a, b| LANGUAGE_SORTER.compare(&a.0, &b.0));
+    //TODO: make the list scrollable?
+    completions.truncate(8);
+    Ok(completions)
+}
+
 #[cfg(target_os = "macos")]
 pub fn trash_entries() -> usize {
     0
@@ -293,7 +331,7 @@ enum PermissionOwner {
 }
 
 fn format_permissions_owner(metadata: &Metadata, owner: PermissionOwner) -> String {
-    return match owner {
+    match owner {
         PermissionOwner::Owner => get_user_by_uid(metadata.uid())
             .and_then(|user| user.name().to_str().map(ToOwned::to_owned))
             .unwrap_or_default(),
@@ -301,34 +339,43 @@ fn format_permissions_owner(metadata: &Metadata, owner: PermissionOwner) -> Stri
             .and_then(|group| group.name().to_str().map(ToOwned::to_owned))
             .unwrap_or_default(),
         PermissionOwner::Other => String::from(""),
-    };
+    }
 }
 
 fn format_permissions(metadata: &Metadata, owner: PermissionOwner) -> String {
-    let mut perms: Vec<String> = Vec::new();
+    let mut mode = 0;
     if match owner {
         PermissionOwner::Owner => metadata.permissions().readable_by_owner(),
         PermissionOwner::Group => metadata.permissions().readable_by_group(),
         PermissionOwner::Other => metadata.permissions().readable_by_other(),
     } {
-        perms.push(fl!("read"));
+        mode |= 4;
     }
     if match owner {
         PermissionOwner::Owner => metadata.permissions().writable_by_owner(),
         PermissionOwner::Group => metadata.permissions().writable_by_group(),
         PermissionOwner::Other => metadata.permissions().writable_by_other(),
     } {
-        perms.push(fl!("write"));
+        mode |= 2;
     }
     if match owner {
         PermissionOwner::Owner => metadata.permissions().executable_by_owner(),
         PermissionOwner::Group => metadata.permissions().executable_by_group(),
         PermissionOwner::Other => metadata.permissions().executable_by_other(),
     } {
-        perms.push(fl!("execute"));
+        mode |= 1;
     }
-
-    perms.join(" ")
+    match mode {
+        0 => fl!("none"),
+        1 => fl!("execute-only"),
+        2 => fl!("write-only"),
+        3 => fl!("write-execute"),
+        4 => fl!("read-only"),
+        5 => fl!("read-execute"),
+        6 => fl!("read-write"),
+        7 => fl!("read-write-execute"),
+        _ => unreachable!(),
+    }
 }
 
 struct FormatTime(SystemTime);
@@ -545,7 +592,7 @@ pub fn scan_path(tab_path: &PathBuf, sizes: IconSizes) -> Vec<Item> {
                     }
                 };
 
-                if name == ".hidden" {
+                if name == ".hidden" && path.is_file() {
                     hidden_files = parse_hidden_file(&path);
                 }
 
@@ -570,11 +617,7 @@ pub fn scan_path(tab_path: &PathBuf, sizes: IconSizes) -> Vec<Item> {
         _ => LANGUAGE_SORTER.compare(&a.display_name, &b.display_name),
     });
     items.iter_mut().for_each(|item| {
-        if hidden_files
-            .iter()
-            .find(|hidden| &&item.name == hidden)
-            .is_some()
-        {
+        if hidden_files.iter().any(|hidden| &item.name == hidden) {
             item.hidden = true;
         }
     });
@@ -741,12 +784,7 @@ pub fn scan_trash(sizes: IconSizes) -> Vec<Item> {
 
 fn uri_to_path(uri: String) -> Option<PathBuf> {
     //TODO support for external drive or cloud?
-    if uri.starts_with("file://") {
-        let path_str = &uri[7..];
-        Some(PathBuf::from(path_str))
-    } else {
-        None
-    }
+    uri.strip_prefix("file://").map(PathBuf::from)
 }
 
 pub fn scan_recents(sizes: IconSizes) -> Vec<Item> {
@@ -768,28 +806,27 @@ pub fn scan_recents(sizes: IconSizes) -> Vec<Item> {
                     Ok(last_visit) => last_visit,
                     Err(_) => continue,
                 };
-                let path_buf = PathBuf::from(path);
-                let path_exist = path_buf.exists();
+                let path_exist = path.exists();
 
                 if path_exist {
-                    let file_name = path_buf.file_name();
+                    let file_name = path.file_name();
 
                     if let Some(name) = file_name {
                         let name = name.to_string_lossy().to_string();
 
-                        let metadata = match path_buf.metadata() {
+                        let metadata = match path.metadata() {
                             Ok(ok) => ok,
                             Err(err) => {
                                 log::warn!(
                                     "failed to read metadata for entry at {:?}: {}",
-                                    path_buf.clone(),
+                                    path,
                                     err
                                 );
                                 continue;
                             }
                         };
 
-                        let item = item_from_entry(path_buf, name, metadata, sizes);
+                        let item = item_from_entry(path, name, metadata, sizes);
                         recents.push((
                             item,
                             if last_edit.le(&last_visit) {
@@ -800,7 +837,7 @@ pub fn scan_recents(sizes: IconSizes) -> Vec<Item> {
                         ))
                     }
                 } else {
-                    log::warn!("recent file path not exist: {:?}", path_buf);
+                    log::warn!("recent file path not exist: {:?}", path);
                 }
             }
         }
@@ -819,8 +856,10 @@ pub fn scan_desktop(
     tab_path: &PathBuf,
     _display: &str,
     desktop_config: DesktopConfig,
-    sizes: IconSizes,
+    mut sizes: IconSizes,
 ) -> Vec<Item> {
+    sizes.grid = desktop_config.icon_size;
+
     let mut items = Vec::new();
 
     if desktop_config.show_content {
@@ -900,6 +939,56 @@ pub fn scan_desktop(
     items
 }
 
+#[derive(Clone, Debug)]
+pub struct EditLocation {
+    pub location: Location,
+    pub completions: Option<Vec<(String, PathBuf)>>,
+    pub selected: Option<usize>,
+}
+
+impl EditLocation {
+    pub fn resolve(&self) -> Option<Location> {
+        let Some(selected) = self.selected else {
+            return Some(self.location.clone());
+        };
+        let completions = self.completions.as_ref()?;
+        let completion = completions.get(selected)?;
+        Some(self.location.with_path(completion.1.clone()))
+    }
+
+    pub fn select(&mut self, forwards: bool) {
+        if let Some(completions) = &self.completions {
+            if completions.is_empty() {
+                self.selected = None;
+            } else {
+                let mut selected = if forwards {
+                    self.selected.and_then(|x| x.checked_add(1)).unwrap_or(0)
+                } else {
+                    self.selected
+                        .and_then(|x| x.checked_sub(1))
+                        .unwrap_or(completions.len() - 1)
+                };
+                if selected >= completions.len() {
+                    selected = 0;
+                }
+                self.selected = Some(selected);
+            }
+        } else {
+            self.selected = None;
+        }
+    }
+}
+
+impl From<Location> for EditLocation {
+    fn from(location: Location) -> Self {
+        Self {
+            location,
+            completions: None,
+            selected: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Location {
     Desktop(PathBuf, String, DesktopConfig),
@@ -928,9 +1017,9 @@ impl std::fmt::Display for Location {
 impl Location {
     pub fn path_opt(&self) -> Option<&PathBuf> {
         match self {
-            Self::Desktop(path, ..) => Some(&path),
-            Self::Path(path) => Some(&path),
-            Self::Search(path, ..) => Some(&path),
+            Self::Desktop(path, ..) => Some(path),
+            Self::Path(path) => Some(path),
+            Self::Search(path, ..) => Some(path),
             _ => None,
         }
     }
@@ -1027,8 +1116,10 @@ pub enum Message {
     LocationContextMenuIndex(Option<usize>),
     LocationMenuAction(LocationMenuAction),
     Drag(Option<Rectangle>),
-    EditLocation(Option<Location>),
+    EditLocation(Option<EditLocation>),
+    EditLocationComplete(usize),
     EditLocationEnable,
+    EditLocationSubmit,
     OpenInNewTab(PathBuf),
     EmptyTrash,
     #[cfg(feature = "desktop")]
@@ -1057,6 +1148,7 @@ pub enum Message {
     SelectLast,
     SetOpenWith(Mime, String),
     SetSort(HeadingOptions, bool),
+    TabComplete(PathBuf, Vec<(String, PathBuf)>),
     Thumbnail(PathBuf, ItemThumbnail),
     ToggleShowHidden,
     View(View),
@@ -1182,7 +1274,7 @@ impl ItemThumbnail {
             && check_size("svg", 8 * 1000 * 1000)
         {
             // Try built-in svg thumbnailer
-            match fs::read(&path) {
+            match fs::read(path) {
                 Ok(data) => {
                     //TODO: validate SVG data
                     return ItemThumbnail::Svg(widget::svg::Handle::from_memory(data));
@@ -1193,7 +1285,7 @@ impl ItemThumbnail {
             }
         } else if mime.type_() == mime::IMAGE && check_size("image", 64 * 1000 * 1000) {
             // Try built-in image thumbnailer
-            match image::ImageReader::open(&path).and_then(|img| img.with_guessed_format()) {
+            match image::ImageReader::open(path).and_then(|img| img.with_guessed_format()) {
                 Ok(reader) => match reader.decode() {
                     Ok(image) => {
                         let thumbnail =
@@ -1231,10 +1323,10 @@ impl ItemThumbnail {
         // Try external thumbnailers
         for thumbnailer in thumbnailer(&mime) {
             let prefix = if thumbnailer.exec.starts_with("evince-thumbnailer ") {
-                //TODO: apparmor config for evince-thumbnailer does not allow /tmp/cosmos-commander*
+                //TODO: apparmor config for evince-thumbnailer does not allow /tmp/cosmic-files*
                 "gnome-desktop-"
             } else {
-                "cosmos-commander-"
+                "cosmic-files-"
             };
             let file = match tempfile::NamedTempFile::with_prefix(prefix) {
                 Ok(ok) => ok,
@@ -1248,7 +1340,7 @@ impl ItemThumbnail {
                 }
             };
 
-            let Some(mut command) = thumbnailer.command(&path, file.path(), thumbnail_size) else {
+            let Some(mut command) = thumbnailer.command(path, file.path(), thumbnail_size) else {
                 continue;
             };
             match command.status() {
@@ -1325,7 +1417,7 @@ impl Item {
         self.mime.type_() == mime::IMAGE || self.mime.type_() == mime::TEXT
     }
 
-    fn preview<'a>(&'a self, sizes: IconSizes) -> Element<'a, Message> {
+    fn preview(&self, sizes: IconSizes) -> Element<'_, Message> {
         let spacing = cosmic::theme::active().cosmic().spacing;
         // This loads the image only if thumbnailing worked
         let icon = widget::icon::icon(self.icon_handle_grid.clone())
@@ -1395,11 +1487,11 @@ impl Item {
 
         let mut column = widget::column().spacing(space_m);
 
-        column = column.push(widget::row::with_children(vec![
-            widget::horizontal_space().into(),
-            self.preview(sizes),
-            widget::horizontal_space().into(),
-        ]));
+        column = column.push(
+            widget::container(self.preview(sizes))
+                .center_x(Length::Fill)
+                .max_height(THUMBNAIL_SIZE as f32),
+        );
 
         let mut details = widget::column().spacing(space_xxxs);
         details = details.push(widget::text::heading(self.name.clone()));
@@ -1500,15 +1592,12 @@ impl Item {
                 //TODO: other metadata types
             }
         }
-        match self
+        if let ItemThumbnail::Image(_, Some((width, height))) = self
             .thumbnail_opt
             .as_ref()
             .unwrap_or(&ItemThumbnail::NotImage)
         {
-            ItemThumbnail::Image(_, Some((width, height))) => {
-                details = details.push(widget::text::body(format!("{}x{}", width, height)));
-            }
-            _ => {}
+            details = details.push(widget::text::body(format!("{}x{}", width, height)));
         }
         column = column.push(details);
 
@@ -1530,7 +1619,7 @@ impl Item {
         column.into()
     }
 
-    pub fn replace_view<'a>(&'a self, heading: String, sizes: IconSizes) -> Element<'a, Message> {
+    pub fn replace_view(&self, heading: String, sizes: IconSizes) -> Element<'_, Message> {
         let cosmic_theme::Spacing { space_xxxs, .. } = theme::active().cosmic().spacing;
 
         let mut row = widget::row().spacing(space_xxxs);
@@ -1652,7 +1741,7 @@ pub struct Tab {
     pub scroll_opt: Option<AbsoluteOffset>,
     pub size_opt: Cell<Option<Size>>,
     pub item_view_size_opt: Cell<Option<Size>>,
-    pub edit_location: Option<Location>,
+    pub edit_location: Option<EditLocation>,
     pub edit_location_id: widget::Id,
     pub history_i: usize,
     pub history: Vec<Location>,
@@ -1714,18 +1803,14 @@ fn parse_hidden_file(path: &PathBuf) -> Vec<String> {
         Err(_) => return Vec::new(),
     };
 
-    let reader = BufReader::new(file);
-    let mut paths: Vec<String> = Vec::new();
-
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            if !line.is_empty() {
-                paths.push(line.trim().to_string());
-            }
-        }
-    }
-
-    paths
+    BufReader::new(file)
+        .lines()
+        .map_while(Result::ok)
+        .flat_map(|line| {
+            let line = line.trim();
+            (!line.is_empty()).then_some(line.to_owned())
+        })
+        .collect()
 }
 
 impl Tab {
@@ -1848,20 +1933,26 @@ impl Tab {
     }
 
     pub fn select_name(&mut self, name: &str) {
+        self.select_focus = None;
         if let Some(ref mut items) = self.items_opt {
-            for item in items.iter_mut() {
+            for (i, item) in items.iter_mut().enumerate() {
                 item.selected = item.name == name;
+                if item.selected {
+                    self.select_focus = Some(i);
+                }
             }
         }
     }
 
     pub fn select_paths(&mut self, paths: Vec<PathBuf>) {
+        self.select_focus = None;
         if let Some(ref mut items) = self.items_opt {
-            for item in items.iter_mut() {
+            for (i, item) in items.iter_mut().enumerate() {
                 item.selected = false;
                 if let Some(path) = item.path_opt() {
                     if paths.contains(path) {
                         item.selected = true;
+                        self.select_focus = Some(i);
                     }
                 }
             }
@@ -2008,15 +2099,11 @@ impl Tab {
             };
 
             first = Some(match first {
-                Some((first_row, first_col)) => {
-                    if row < first_row {
-                        (row, col)
-                    } else if row == first_row {
-                        (row, col.min(first_row))
-                    } else {
-                        (first_row, first_col)
-                    }
-                }
+                Some((first_row, first_col)) => match row.cmp(&first_row) {
+                    Ordering::Less => (row, col),
+                    Ordering::Equal => (row, col.min(first_row)),
+                    Ordering::Greater => (first_row, first_col),
+                },
                 None => (row, col),
             });
         }
@@ -2037,15 +2124,11 @@ impl Tab {
             };
 
             last = Some(match last {
-                Some((last_row, last_col)) => {
-                    if row > last_row {
-                        (row, col)
-                    } else if row == last_row {
-                        (row, col.max(last_row))
-                    } else {
-                        (last_row, last_col)
-                    }
-                }
+                Some((last_row, last_col)) => match row.cmp(&last_row) {
+                    Ordering::Greater => (row, col),
+                    Ordering::Equal => (row, col.max(last_row)),
+                    Ordering::Less => (last_row, last_col),
+                },
                 None => (row, col),
             });
         }
@@ -2120,12 +2203,10 @@ impl Tab {
                     if let Some(location) = &clicked_item.location_opt {
                         if clicked_item.metadata.is_dir() {
                             cd = Some(location.clone());
+                        } else if let Some(path) = location.path_opt() {
+                            commands.push(Command::OpenFile(path.to_path_buf()));
                         } else {
-                            if let Some(path) = location.path_opt() {
-                                commands.push(Command::OpenFile(path.to_path_buf()));
-                            } else {
-                                log::warn!("no path for item {:?}", clicked_item);
-                            }
+                            log::warn!("no path for item {:?}", clicked_item);
                         }
                     } else {
                         log::warn!("no location for item {:?}", clicked_item);
@@ -2201,7 +2282,7 @@ impl Tab {
                                 let max = indices
                                     .iter()
                                     .position(|&offset| offset == max)
-                                    .unwrap_or_else(|| indices.len());
+                                    .unwrap_or(indices.len());
                                 let min_real = min.min(max);
                                 let max_real = max.max(min);
 
@@ -2338,8 +2419,8 @@ impl Tab {
                     }
                 }
             }
-            Message::Drag(rect_opt) => match rect_opt {
-                Some(rect) => {
+            Message::Drag(rect_opt) => {
+                if let Some(rect) = rect_opt {
                     self.context_menu = None;
                     self.location_context_menu_index = None;
                     self.select_rect(rect, mod_ctrl, mod_shift);
@@ -2350,21 +2431,31 @@ impl Tab {
                         ));
                     }
                 }
-                None => {}
-            },
+            }
             Message::EditLocation(edit_location) => {
-                if self.edit_location.is_none() && edit_location.is_some() {
+                self.edit_location = edit_location;
+                if self.edit_location.is_some() {
                     commands.push(Command::Iced(
                         widget::text_input::focus(self.edit_location_id.clone()).into(),
                     ));
                 }
-                self.edit_location = edit_location;
+            }
+            Message::EditLocationComplete(selected) => {
+                if let Some(mut edit_location) = self.edit_location.take() {
+                    edit_location.selected = Some(selected);
+                    cd = edit_location.resolve();
+                }
             }
             Message::EditLocationEnable => {
                 commands.push(Command::Iced(
                     widget::text_input::focus(self.edit_location_id.clone()).into(),
                 ));
-                self.edit_location = Some(self.location.clone());
+                self.edit_location = Some(self.location.clone().into());
+            }
+            Message::EditLocationSubmit => {
+                if let Some(edit_location) = self.edit_location.take() {
+                    cd = edit_location.resolve();
+                }
             }
             Message::OpenInNewTab(path) => {
                 commands.push(Command::OpenInNewTab(path));
@@ -2402,19 +2493,17 @@ impl Tab {
                     }
                     let mut found = false;
                     for (index, item) in indices {
-                        if self.select_focus == None {
+                        if self.select_focus.is_none() {
                             found = true;
                         }
                         if self.select_focus == Some(index) {
                             found = true;
                             continue;
                         }
-                        if found {
-                            if item.can_gallery() {
-                                pos_opt = item.pos_opt.get();
-                                if pos_opt.is_some() {
-                                    break;
-                                }
+                        if found && item.can_gallery() {
+                            pos_opt = item.pos_opt.get();
+                            if pos_opt.is_some() {
+                                break;
                             }
                         }
                     }
@@ -2459,7 +2548,9 @@ impl Tab {
                 }
             }
             Message::ItemDown => {
-                if self.gallery {
+                if let Some(edit_location) = &mut self.edit_location {
+                    edit_location.select(true);
+                } else if self.gallery {
                     for command in self.update(Message::GalleryNext, modifiers) {
                         commands.push(command);
                     }
@@ -2583,7 +2674,9 @@ impl Tab {
                 }
             }
             Message::ItemUp => {
-                if self.gallery {
+                if let Some(edit_location) = &mut self.edit_location {
+                    edit_location.select(false);
+                } else if self.gallery {
                     for command in self.update(Message::GalleryPrevious, modifiers) {
                         commands.push(command);
                     }
@@ -2661,11 +2754,8 @@ impl Tab {
                                         if item.metadata.is_dir() {
                                             //TODO: allow opening multiple tabs?
                                             cd = Some(location.clone());
-                                        } else {
-                                            if let Some(path) = location.path_opt() {
-                                                commands
-                                                    .push(Command::OpenFile(path.to_path_buf()));
-                                            }
+                                        } else if let Some(path) = location.path_opt() {
+                                            commands.push(Command::OpenFile(path.to_path_buf()));
                                         }
                                     } else {
                                         //TODO: open properties?
@@ -2841,6 +2931,16 @@ impl Tab {
                     self.sort_direction = dir;
                 }
             }
+            Message::TabComplete(path, completions) => {
+                if let Some(edit_location) = &mut self.edit_location {
+                    if edit_location.location.path_opt() == Some(&path) {
+                        edit_location.completions = Some(completions);
+                        commands.push(Command::Iced(
+                            widget::text_input::focus(self.edit_location_id.clone()).into(),
+                        ));
+                    }
+                }
+            }
             Message::Thumbnail(path, thumbnail) => {
                 if let Some(ref mut items) = self.items_opt {
                     let location = Location::Path(path);
@@ -2992,7 +3092,7 @@ impl Tab {
         }
 
         // Change directory if requested
-        if let Some(location) = cd {
+        if let Some(mut location) = cd {
             if matches!(self.mode, Mode::Desktop) {
                 match location {
                     Location::Path(path) => {
@@ -3003,17 +3103,34 @@ impl Tab {
                     }
                     _ => {}
                 }
-            } else if location != self.location {
-                if location.path_opt().map_or(true, |path| path.is_dir()) {
-                    let prev_path = if let Some(path) = self.location.path_opt() {
-                        Some(vec![path.to_path_buf()])
+            } else {
+                // Select parent if location is not directory
+                let mut selected_paths = None;
+                if let Some(path) = location.path_opt() {
+                    if !path.is_dir() {
+                        if let Some(parent) = path.parent() {
+                            selected_paths = Some(vec![path.to_path_buf()]);
+                            location = location.with_path(parent.to_path_buf());
+                        }
+                    }
+                }
+                if location != self.location || selected_paths.is_some() {
+                    if location.path_opt().map_or(true, |path| path.is_dir()) {
+                        if selected_paths.is_none() {
+                            selected_paths = self
+                                .location
+                                .path_opt()
+                                .map(|path| vec![path.to_path_buf()]);
+                        }
+                        self.change_location(&location, history_i_opt);
+                        commands.push(Command::ChangeLocation(
+                            self.title(),
+                            location,
+                            selected_paths,
+                        ));
                     } else {
-                        None
-                    };
-                    self.change_location(&location, history_i_opt);
-                    commands.push(Command::ChangeLocation(self.title(), location, prev_path));
-                } else {
-                    log::warn!("tried to cd to {:?} which is not a directory", location);
+                        log::warn!("tried to cd to {:?} which is not a directory", location);
+                    }
                 }
             }
         }
@@ -3136,7 +3253,7 @@ impl Tab {
         let location1 = location.clone();
         let location2 = location.clone();
         let location3 = location.clone();
-        let is_dnd_hovered = self.dnd_hovered.as_ref().map(|(l, _)| l) == Some(&location);
+        let is_dnd_hovered = self.dnd_hovered.as_ref().map(|(l, _)| l) == Some(location);
         let mut container = widget::container(
             DndDestination::for_data::<ClipboardPaste>(element, move |data, action| {
                 if let Some(mut data) = data {
@@ -3329,11 +3446,11 @@ impl Tab {
                 .min_bounds()
                 .width
         }
-        fn text_width_body<'a>(content: &'a str) -> f32 {
+        fn text_width_body(content: &str) -> f32 {
             //TODO: should libcosmic set the font when using widget::text::body?
             text_width(content, font::default(), 14.0, 20.0)
         }
-        fn text_width_heading<'a>(content: &'a str) -> f32 {
+        fn text_width_heading(content: &str) -> f32 {
             text_width(content, font::semibold(), 14.0, 20.0)
         }
 
@@ -3398,9 +3515,9 @@ impl Tab {
                 _ => {}
             }
             //TODO: make it possible to resize with the mouse
-            return mouse_area::MouseArea::new(row)
+            mouse_area::MouseArea::new(row)
                 .on_press(move |_point_opt| Message::ToggleSort(msg))
-                .into();
+                .into()
         };
 
         let heading_row = widget::row::with_children(vec![
@@ -3434,34 +3551,67 @@ impl Tab {
         let heading_rule = widget::container(horizontal_rule(1))
             .padding([0, theme::active().cosmic().corner_radii.radius_xs[0] as u16]);
 
-        if let Some(location) = &self.edit_location {
-            //TODO: allow editing other locations
-            if let Some(path) = location.path_opt() {
-                row = row.push(
-                    widget::button::custom(
-                        widget::icon::from_name("window-close-symbolic").size(16),
-                    )
-                    .on_press(Message::EditLocation(None))
-                    .padding(space_xxs)
-                    .class(theme::Button::Icon),
-                );
-                row = row.push(
-                    widget::text_input("", path.to_string_lossy())
+        if let Some(edit_location) = &self.edit_location {
+            if let Some(location) = edit_location.resolve() {
+                //TODO: allow editing other locations
+                if let Some(path) = location.path_opt().map(|x| x.to_path_buf()) {
+                    row = row.push(
+                        widget::button::custom(
+                            widget::icon::from_name("window-close-symbolic").size(16),
+                        )
+                        .on_press(Message::EditLocation(None))
+                        .padding(space_xxs)
+                        .class(theme::Button::Icon),
+                    );
+                    let location = location.clone();
+                    let text_input = widget::text_input("", path.to_string_lossy().to_string())
                         .id(self.edit_location_id.clone())
-                        .on_input(|input| {
-                            Message::EditLocation(Some(location.with_path(PathBuf::from(input))))
+                        .on_input(move |input| {
+                            Message::EditLocation(Some(
+                                location.with_path(PathBuf::from(input)).into(),
+                            ))
                         })
-                        .on_submit(Message::Location(location.clone()))
-                        .line_height(1.0),
-                );
-                let mut column = widget::column::with_capacity(4).padding([0, space_s]);
-                column = column.push(row);
-                column = column.push(accent_rule);
-                if self.config.view == View::List && !condensed {
-                    column = column.push(heading_row);
-                    column = column.push(heading_rule);
+                        .on_submit(Message::EditLocationSubmit)
+                        .line_height(1.0);
+                    let mut popover =
+                        widget::popover(text_input).position(widget::popover::Position::Bottom);
+                    if let Some(completions) = &edit_location.completions {
+                        if !completions.is_empty() {
+                            let mut column =
+                                widget::column::with_capacity(completions.len()).padding(space_xxs);
+                            for (i, (name, _path)) in completions.iter().enumerate() {
+                                let selected = edit_location.selected == Some(i);
+                                column = column.push(
+                                    widget::button::custom(widget::text::body(name))
+                                        //TODO: match to design
+                                        .class(if selected {
+                                            theme::Button::Standard
+                                        } else {
+                                            theme::Button::HeaderBar
+                                        })
+                                        .on_press(Message::EditLocationComplete(i))
+                                        .padding(space_xxs)
+                                        .width(Length::Fill),
+                                );
+                            }
+                            popover = popover.popup(
+                                widget::container(column)
+                                    .class(theme::Container::Dropdown)
+                                    //TODO: This is a hack to get the popover to be the right width
+                                    .max_width(size.width - 140.0),
+                            );
+                        }
+                    }
+                    row = row.push(popover);
+                    let mut column = widget::column::with_capacity(4).padding([0, space_s]);
+                    column = column.push(row);
+                    column = column.push(accent_rule);
+                    if self.config.view == View::List && !condensed {
+                        column = column.push(heading_row);
+                        column = column.push(heading_rule);
+                    }
+                    return column.into();
                 }
-                return column.into();
             }
         } else if let Some(path) = self.location.path_opt() {
             row = row.push(
@@ -3469,7 +3619,7 @@ impl Tab {
                     widget::button::custom(widget::icon::from_name("edit-symbolic").size(16))
                         .padding(space_xxs)
                         .class(theme::Button::Icon)
-                        .on_press(Message::EditLocation(Some(self.location.clone()))),
+                        .on_press(Message::EditLocation(Some(self.location.clone().into()))),
                 )
                 .on_middle_press(move |_| Message::OpenInNewTab(path.clone())),
             );
@@ -3482,7 +3632,7 @@ impl Tab {
                 let excess_str = "...";
                 let excess_width = text_width_body(excess_str);
                 for (index, ancestor) in path.ancestors().enumerate() {
-                    let (name, found_home) = folder_name(&ancestor);
+                    let (name, found_home) = folder_name(ancestor);
                     let (name_width, name_text) = if children.is_empty() {
                         (
                             text_width_heading(&name),
@@ -3652,9 +3802,15 @@ impl Tab {
 
         let TabConfig2 {
             show_hidden,
-            icon_sizes,
+            mut icon_sizes,
             ..
         } = self.config;
+
+        let mut grid_spacing = space_xxs;
+        if let Location::Desktop(_path, _output, desktop_config) = &self.location {
+            icon_sizes.grid = desktop_config.icon_size;
+            grid_spacing = desktop_config.grid_spacing_for(space_xxs);
+        };
 
         let text_height = 3 * 20; // 3 lines of text
         let item_width = (3 * space_xxs + icon_sizes.grid() + 3 * space_xxs) as usize;
@@ -3664,8 +3820,7 @@ impl Tab {
         let (width, height) = match self.size_opt.get() {
             Some(size) => (
                 (size.width.floor() as usize)
-                    .checked_sub(2 * (space_m as usize))
-                    .unwrap_or(0)
+                    .saturating_sub(2 * (space_m as usize))
                     .max(item_width),
                 (size.height.floor() as usize).max(item_height),
             ),
@@ -3673,26 +3828,25 @@ impl Tab {
         };
 
         let (cols, column_spacing) = {
-            let width_m1 = width.checked_sub(item_width).unwrap_or(0);
-            let cols_m1 = width_m1 / (item_width + space_xxs as usize);
+            let width_m1 = width.saturating_sub(item_width);
+            let cols_m1 = width_m1 / (item_width + grid_spacing as usize);
             let cols = cols_m1 + 1;
             let spacing = width_m1
                 .checked_div(cols_m1)
                 .unwrap_or(0)
-                .checked_sub(item_width)
-                .unwrap_or(0);
+                .saturating_sub(item_width);
             (cols, spacing as u16)
         };
 
         let rows = {
-            let height_m1 = height.checked_sub(item_height).unwrap_or(0);
-            let rows_m1 = height_m1 / (item_height + space_xxs as usize);
+            let height_m1 = height.saturating_sub(item_height);
+            let rows_m1 = height_m1 / (item_height + grid_spacing as usize);
             rows_m1 + 1
         };
 
         let mut grid = widget::grid()
             .column_spacing(column_spacing)
-            .row_spacing(space_xxs)
+            .row_spacing(grid_spacing)
             .padding(space_xxs.into());
         let mut dnd_items: Vec<(usize, (usize, usize), &Item)> = Vec::new();
         let mut drag_w_i = usize::MAX;
@@ -3720,7 +3874,7 @@ impl Tab {
                 item.rect_opt.set(Some(Rectangle::new(
                     Point::new(
                         (col * (item_width + column_spacing as usize) + space_m as usize) as f32,
-                        (row * (item_height + space_xxs as usize)) as f32,
+                        (row * (item_height + grid_spacing as usize)) as f32,
                     ),
                     Size::new(item_width as f32, item_height as f32),
                 )));
@@ -3856,7 +4010,7 @@ impl Tab {
                         height: s.height - top_deduct as f32,
                     }));
 
-                let spacer_height = height.checked_sub(max_bottom + top_deduct).unwrap_or(0);
+                let spacer_height = height.saturating_sub(max_bottom + top_deduct);
                 if spacer_height > 0 {
                     children.push(
                         widget::container(Space::with_height(Length::Fixed(spacer_height as f32)))
@@ -3870,7 +4024,7 @@ impl Tab {
             (!dnd_items.is_empty()).then(|| {
                 let mut dnd_grid = widget::grid()
                     .column_spacing(column_spacing)
-                    .row_spacing(space_xxs)
+                    .row_spacing(grid_spacing)
                     .padding(space_xxs.into());
 
                 let mut dnd_item_i = 0;
@@ -3931,15 +4085,13 @@ impl Tab {
                 }
                 Element::from(dnd_grid)
             }),
-            mouse_area::MouseArea::new(
-                widget::container(widget::column::with_children(children)).width(Length::Fill),
-            )
-            .on_press(|_| Message::Click(None))
-            .on_drag(Message::Drag)
-            .on_drag_end(|_| Message::DragEnd(None))
-            .show_drag_rect(true)
-            .on_release(|_| Message::ClickRelease(None))
-            .into(),
+            mouse_area::MouseArea::new(widget::column::with_children(children).width(Length::Fill))
+                .on_press(|_| Message::Click(None))
+                .on_drag(Message::Drag)
+                .on_drag_end(|_| Message::DragEnd(None))
+                .show_drag_rect(true)
+                .on_release(|_| Message::ClickRelease(None))
+                .into(),
             true,
         )
     }
@@ -3992,7 +4144,7 @@ impl Tab {
                 item.pos_opt.set(Some((count, 0)));
                 item.rect_opt.set(Some(Rectangle::new(
                     Point::new(space_m as f32, y as f32),
-                    Size::new(size.width - (2 * space_s) as f32, row_height as f32),
+                    Size::new(size.width - (2 * space_m) as f32, row_height as f32),
                 )));
 
                 if count > 0 {
@@ -4305,7 +4457,7 @@ impl Tab {
                 items
                     .iter()
                     .filter(|item| item.selected)
-                    .filter_map(|item| item.path_opt().map(|x| x.clone()))
+                    .filter_map(|item| item.path_opt().cloned())
                     .collect::<Vec<PathBuf>>()
             })
             .unwrap_or_default();
@@ -4347,7 +4499,7 @@ impl Tab {
 
         if let Some(point) = self.context_menu {
             popover = popover
-                .popup(menu::context_menu2(&self, &key_binds))
+                .popup(menu::context_menu2(self, key_binds))
                 .position(widget::popover::Position::Point(point));
         }
         let mut tab_column = widget::column::with_capacity(3);
@@ -4441,152 +4593,153 @@ impl Tab {
     }
 
     pub fn subscription(&self, preview: bool) -> Subscription<Message> {
-        let Some(items) = &self.items_opt else {
+        let Some(_items) = &self.items_opt else {
             return Subscription::none();
         };
 
         //TODO: how many thumbnail loads should be in flight at once?
-        let jobs = 8;
+        let jobs = num_cpus::get();
         let mut subscriptions = Vec::with_capacity(jobs + 1);
 
-        //TODO: move to function
-        let visible_rect = {
-            let point = match self.scroll_opt {
-                Some(offset) => Point::new(0.0, offset.y),
-                None => Point::new(0.0, 0.0),
+        if let Some(items) = &self.items_opt {
+            //TODO: move to function
+            let visible_rect = {
+                let point = match self.scroll_opt {
+                    Some(offset) => Point::new(0.0, offset.y),
+                    None => Point::new(0.0, 0.0),
+                };
+                let size = self.size_opt.get().unwrap_or_else(|| Size::new(0.0, 0.0));
+                Rectangle::new(point, size)
             };
-            let size = self.size_opt.get().unwrap_or_else(|| Size::new(0.0, 0.0));
-            Rectangle::new(point, size)
-        };
 
-        //TODO: HACK to ensure positions are up to date since subscription runs before view
-        match self.config.view {
-            View::Grid => _ = self.grid_view(),
-            View::List => _ = self.list_view(),
-        };
+            //TODO: HACK to ensure positions are up to date since subscription runs before view
+            match self.config.view {
+                View::Grid => _ = self.grid_view(),
+                View::List => _ = self.list_view(),
+            };
 
-        for item in items.iter() {
-            if item.thumbnail_opt.is_some() {
-                // Skip items that already have a mime type and thumbnail
-                continue;
-            }
+            for item in items.iter() {
+                if item.thumbnail_opt.is_some() {
+                    // Skip items that already have a mime type and thumbnail
+                    continue;
+                }
 
-            match item.rect_opt.get() {
-                Some(rect) => {
-                    if !rect.intersects(&visible_rect) {
-                        // Skip items that are not visible
+                match item.rect_opt.get() {
+                    Some(rect) => {
+                        if !rect.intersects(&visible_rect) {
+                            // Skip items that are not visible
+                            continue;
+                        }
+                    }
+                    None => {
+                        // Skip items with no determined rect (this should include hidden items)
                         continue;
                     }
                 }
-                None => {
-                    // Skip items with no determined rect (this should include hidden items)
+
+                let Some(path) = item.path_opt().map(|path| path.to_path_buf()) else {
                     continue;
+                };
+                let ItemMetadata::Path { metadata, .. } = item.metadata.clone() else {
+                    continue;
+                };
+                let mime = item.mime.clone();
+
+                subscriptions.push(Subscription::run_with_id(
+                    ("thumbnail", path.clone()),
+                    stream::channel(1, |mut output| async move {
+                        let message = {
+                            let path = path.clone();
+                            tokio::task::spawn_blocking(move || {
+                                let start = Instant::now();
+                                let thumbnail =
+                                    ItemThumbnail::new(&path, metadata, mime, THUMBNAIL_SIZE);
+                                log::debug!("thumbnailed {:?} in {:?}", path, start.elapsed());
+                                Message::Thumbnail(path.clone(), thumbnail)
+                            })
+                            .await
+                            .unwrap()
+                        };
+
+                        match output.send(message).await {
+                            Ok(()) => {}
+                            Err(err) => {
+                                log::warn!("failed to send thumbnail for {:?}: {}", &path, err);
+                            }
+                        }
+
+                        std::future::pending().await
+                    }),
+                ));
+
+                if subscriptions.len() >= jobs {
+                    break;
                 }
             }
 
-            let Some(path) = item.path_opt().map(|path| path.to_path_buf()) else {
-                continue;
-            };
-            let ItemMetadata::Path { metadata, .. } = item.metadata.clone() else {
-                continue;
-            };
-            let mime = item.mime.clone();
-
-            subscriptions.push(Subscription::run_with_id(
-                ("thumbnail", path.clone()),
-                stream::channel(1, |mut output| async move {
-                    let message = {
-                        let path = path.clone();
-                        tokio::task::spawn_blocking(move || {
-                            let start = Instant::now();
-                            let thumbnail =
-                                ItemThumbnail::new(&path, metadata, mime, THUMBNAIL_SIZE);
-                            log::debug!("thumbnailed {:?} in {:?}", path, start.elapsed());
-                            Message::Thumbnail(path.clone(), thumbnail)
-                        })
-                        .await
-                        .unwrap()
-                    };
-
-                    match output.send(message).await {
-                        Ok(()) => {}
-                        Err(err) => {
-                            log::warn!("failed to send thumbnail for {:?}: {}", &path, err);
-                        }
-                    }
-
-                    std::future::pending().await
-                }),
-            ));
-
-            if subscriptions.len() >= jobs {
-                break;
-            }
-        }
-
-        if preview {
-            // Load directory size for selected items
-            if let Some(item) = items
-                .iter()
-                .filter(|item| item.selected)
-                .next()
-                .or(self.parent_item_opt.as_ref())
-            {
-                // Item must have a path
-                if let Some(path) = item.path_opt().map(|path| path.to_path_buf()) {
-                    // Item must be calculating directory size
-                    if let DirSize::Calculating(controller) = &item.dir_size {
-                        let controller = controller.clone();
-                        subscriptions.push(Subscription::run_with_id(
-                            ("dir_size", path.clone()),
-                            stream::channel(1, |mut output| async move {
-                                let message = {
-                                    let path = path.clone();
-                                    tokio::task::spawn_blocking(move || {
-                                        let start = Instant::now();
-                                        match calculate_dir_size(&path, controller) {
-                                            Ok(size) => {
-                                                log::debug!(
-                                                    "calculated directory size of {:?} in {:?}",
-                                                    path,
-                                                    start.elapsed()
-                                                );
-                                                Message::DirectorySize(
-                                                    path.clone(),
-                                                    DirSize::Directory(size),
-                                                )
-                                            }
-                                            Err(err) => {
-                                                log::warn!(
+            if preview {
+                // Load directory size for selected items
+                if let Some(item) = items
+                    .iter()
+                    .find(|item| item.selected)
+                    .or(self.parent_item_opt.as_ref())
+                {
+                    // Item must have a path
+                    if let Some(path) = item.path_opt().map(|path| path.to_path_buf()) {
+                        // Item must be calculating directory size
+                        if let DirSize::Calculating(controller) = &item.dir_size {
+                            let controller = controller.clone();
+                            subscriptions.push(Subscription::run_with_id(
+                                ("dir_size", path.clone()),
+                                stream::channel(1, |mut output| async move {
+                                    let message = {
+                                        let path = path.clone();
+                                        tokio::task::spawn_blocking(move || {
+                                            let start = Instant::now();
+                                            match calculate_dir_size(&path, controller) {
+                                                Ok(size) => {
+                                                    log::debug!(
+                                                        "calculated directory size of {:?} in {:?}",
+                                                        path,
+                                                        start.elapsed()
+                                                    );
+                                                    Message::DirectorySize(
+                                                        path.clone(),
+                                                        DirSize::Directory(size),
+                                                    )
+                                                }
+                                                Err(err) => {
+                                                    log::warn!(
                                                 "failed to calculate directory size of {:?}: {}",
                                                 path,
                                                 err
                                             );
-                                                Message::DirectorySize(
-                                                    path.clone(),
-                                                    DirSize::Error(err),
-                                                )
+                                                    Message::DirectorySize(
+                                                        path.clone(),
+                                                        DirSize::Error(err),
+                                                    )
+                                                }
                                             }
+                                        })
+                                        .await
+                                        .unwrap()
+                                    };
+
+                                    match output.send(message).await {
+                                        Ok(()) => {}
+                                        Err(err) => {
+                                            log::warn!(
+                                                "failed to send directory size for {:?}: {}",
+                                                &path,
+                                                err
+                                            );
                                         }
-                                    })
-                                    .await
-                                    .unwrap()
-                                };
-
-                                match output.send(message).await {
-                                    Ok(()) => {}
-                                    Err(err) => {
-                                        log::warn!(
-                                            "failed to send directory size for {:?}: {}",
-                                            &path,
-                                            err
-                                        );
                                     }
-                                }
 
-                                std::future::pending().await
-                            }),
-                        ));
+                                    std::future::pending().await
+                                }),
+                            ));
+                        }
                     }
                 }
             }
@@ -4598,7 +4751,7 @@ impl Tab {
             let path = path.clone();
             let term = term.clone();
             let show_hidden = *show_hidden;
-            let start = start.clone();
+            let start = *start;
             subscriptions.push(Subscription::run_with_id(
                 location.clone(),
                 stream::channel(2, move |mut output| async move {
@@ -4683,6 +4836,46 @@ impl Tab {
             ));
         }
 
+        if let Some(path) = self
+            .edit_location
+            .as_ref()
+            .and_then(|x| x.location.path_opt())
+            .map(|x| x.to_path_buf())
+        {
+            subscriptions.push(Subscription::run_with_id(
+                ("tab_complete", path.to_string_lossy().to_string()),
+                stream::channel(1, |mut output| async move {
+                    let message = {
+                        let path = path.clone();
+                        tokio::task::spawn_blocking(move || {
+                            let start = Instant::now();
+                            match tab_complete(&path) {
+                                Ok(completions) => {
+                                    log::info!("tab completed {:?} in {:?}", path, start.elapsed());
+                                    Message::TabComplete(path.clone(), completions)
+                                }
+                                Err(err) => {
+                                    log::warn!("failed to tab complete {:?}: {}", path, err);
+                                    Message::TabComplete(path.clone(), Vec::new())
+                                }
+                            }
+                        })
+                        .await
+                        .unwrap()
+                    };
+
+                    match output.send(message).await {
+                        Ok(()) => {}
+                        Err(err) => {
+                            log::warn!("failed to send tab completion for {:?}: {}", path, err);
+                        }
+                    }
+
+                    std::future::pending().await
+                }),
+            ));
+        }
+
         Subscription::batch(subscriptions)
     }
 }
@@ -4706,352 +4899,6 @@ pub fn respond_to_scroll_direction(delta: ScrollDelta, modifiers: Modifiers) -> 
     }
 
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{fs, io, path::PathBuf};
-
-    use cosmic::{iced::mouse::ScrollDelta, iced_runtime::keyboard::Modifiers};
-    use log::{debug, trace};
-    use tempfile::TempDir;
-    use test_log::test;
-
-    use super::{respond_to_scroll_direction, scan_path, Location, Message, Tab};
-    use crate::{
-        app::test_utils::{
-            assert_eq_tab_path2, empty_fs, eq_path_item2, filter_dirs, read_dir_sorted, simple_fs,
-            tab_click_new2, NAME_LEN, NUM_DIRS, NUM_FILES, NUM_HIDDEN, NUM_NESTED,
-        },
-        config::{IconSizes, TabConfig2},
-    };
-
-    // Boilerplate for tab tests. Checks if simulated clicks selected items.
-    fn tab_selects_item(
-        clicks: &[usize],
-        modifiers: Modifiers,
-        expected_selected: &[bool],
-    ) -> io::Result<()> {
-        let (_fs, mut tab) = tab_click_new2(NUM_FILES, NUM_NESTED, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
-
-        // Simulate clicks by triggering Message::Click
-        for &click in clicks {
-            debug!("Emitting Message::Click(Some({click})) with modifiers: {modifiers:?}");
-            tab.update(Message::Click(Some(click)), modifiers);
-        }
-
-        let items = tab
-            .items_opt
-            .as_deref()
-            .expect("tab should be populated with items");
-
-        for (i, (&expected, actual)) in expected_selected.into_iter().zip(items).enumerate() {
-            assert_eq!(
-                expected,
-                actual.selected,
-                "expected index {i} to be {}",
-                if expected {
-                    "selected but it was deselected"
-                } else {
-                    "deselected but it was selected"
-                }
-            );
-        }
-
-        Ok(())
-    }
-
-    fn tab_history() -> io::Result<(TempDir, Tab, Vec<PathBuf>)> {
-        let fs = simple_fs(NUM_FILES, NUM_NESTED, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
-        let path = fs.path();
-        let mut tab = Tab::new(Location::Path(path.into()), TabConfig2::default());
-
-        // All directories (simple_fs only produces one nested layer)
-        let dirs: Vec<PathBuf> = filter_dirs(path)?
-            .flat_map(|dir| {
-                filter_dirs(&dir).map(|nested_dirs| std::iter::once(dir).chain(nested_dirs))
-            })
-            .flatten()
-            .collect();
-        assert!(
-            dirs.len() == NUM_DIRS + NUM_DIRS * NUM_NESTED,
-            "Sanity check: Have {} dirs instead of {}",
-            dirs.len(),
-            NUM_DIRS + NUM_DIRS * NUM_NESTED
-        );
-
-        debug!("Building history by emitting Message::Location");
-        for dir in &dirs {
-            debug!(
-                "Emitting Message::Location(Location::Path(\"{}\"))",
-                dir.display()
-            );
-            tab.update(
-                Message::Location(Location::Path(dir.clone())),
-                Modifiers::empty(),
-            );
-        }
-        trace!("Tab history: {:?}", tab.history);
-
-        Ok((fs, tab, dirs))
-    }
-
-    #[test]
-    fn scan_path_succeeds_on_valid_path() -> io::Result<()> {
-        let fs = simple_fs(NUM_FILES, NUM_HIDDEN, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
-        let path = fs.path();
-
-        // Read directory entries and sort as cosmos-commander does
-        let entries = read_dir_sorted(path)?;
-
-        debug!("Calling scan_path(\"{}\")", path.display());
-        let actual = scan_path(&path.to_owned(), IconSizes::default());
-
-        // scan_path shouldn't skip any entries
-        assert_eq!(entries.len(), actual.len());
-
-        // Correct files should be scanned
-        assert!(entries
-            .into_iter()
-            .zip(actual.into_iter())
-            .all(|(path, item)| eq_path_item2(&path, &item)));
-
-        Ok(())
-    }
-
-    #[test]
-    fn scan_path_returns_empty_vec_for_invalid_path() -> io::Result<()> {
-        let fs = simple_fs(NUM_FILES, NUM_NESTED, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
-        let path = fs.path();
-
-        // A nonexisting path within the temp dir
-        let invalid_path = path.join("ferris");
-        assert!(!invalid_path.exists());
-
-        debug!("Calling scan_path(\"{}\")", invalid_path.display());
-        let actual = scan_path(&invalid_path, IconSizes::default());
-
-        assert!(actual.is_empty());
-
-        Ok(())
-    }
-
-    #[test]
-    fn scan_path_empty_dir_returns_empty_vec() -> io::Result<()> {
-        let fs = empty_fs()?;
-        let path = fs.path();
-
-        debug!("Calling scan_path(\"{}\")", path.display());
-        let actual = scan_path(&path.to_owned(), IconSizes::default());
-
-        assert_eq!(0, path.read_dir()?.count());
-        assert!(actual.is_empty());
-
-        Ok(())
-    }
-
-    #[test]
-    fn tab_location_changes_location() -> io::Result<()> {
-        let fs = simple_fs(NUM_FILES, NUM_NESTED, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
-        let path = fs.path();
-
-        // Next directory in temp directory
-        // This does not have to be sorted
-        let next_dir = filter_dirs(path)?
-            .next()
-            .expect("temp directory should have at least one directory");
-
-        let mut tab = Tab::new(Location::Path(path.to_owned()), TabConfig2::default());
-        debug!(
-            "Emitting Message::Location(Location::Path(\"{}\"))",
-            next_dir.display()
-        );
-        tab.update(
-            Message::Location(Location::Path(next_dir.clone())),
-            Modifiers::empty(),
-        );
-
-        // Validate that the tab's path updated
-        // NOTE: `items_opt` is set to None with Message::Location so this ONLY checks for equal paths
-        // If item contents are NOT None then this needs to be reevaluated for correctness
-        assert_eq_tab_path2(&tab, &next_dir);
-        assert!(
-            tab.items_opt.is_none(),
-            "Tab's `items` is not None which means this test needs to be updated"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn tab_click_single_selects_item() -> io::Result<()> {
-        // Select the second directory with no keys held down
-        tab_selects_item(&[1], Modifiers::empty(), &[false, true])
-    }
-
-    #[test]
-    fn tab_click_double_opens_folder() -> io::Result<()> {
-        let (fs, mut tab) = tab_click_new2(NUM_FILES, NUM_NESTED, NUM_DIRS, NUM_NESTED, NAME_LEN)?;
-        let path = fs.path();
-
-        // Simulate double clicking second directory
-        debug!("Emitting double click Message::DoubleClick(Some(1))");
-        tab.update(Message::DoubleClick(Some(1)), Modifiers::empty());
-
-        // Path to second directory
-        let second_dir = read_dir_sorted(path)?
-            .into_iter()
-            .filter(|p| p.is_dir())
-            .nth(1)
-            .expect("should be at least two directories");
-
-        // Location should have changed to second_dir
-        assert_eq_tab_path2(&tab, &second_dir);
-
-        Ok(())
-    }
-
-    #[test]
-    fn tab_click_ctrl_selects_multiple() -> io::Result<()> {
-        // Select the first and second directory by holding down ctrl
-        tab_selects_item(&[0, 1], Modifiers::CTRL, &[true, true])
-    }
-
-    #[test]
-    fn tab_gonext_moves_forward_in_history() -> io::Result<()> {
-        let (fs, mut tab, dirs) = tab_history()?;
-        let path = fs.path();
-
-        // Rewind to the start
-        for _ in 0..dirs.len() {
-            debug!("Emitting Message::GoPrevious to rewind to the start",);
-            tab.update(Message::GoPrevious, Modifiers::empty());
-        }
-        assert_eq_tab_path2(&tab, path);
-
-        // Back to the future. Directories should be in the order they were opened.
-        for dir in dirs {
-            debug!("Emitting Message::GoNext",);
-            tab.update(Message::GoNext, Modifiers::empty());
-            assert_eq_tab_path2(&tab, &dir);
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn tab_goprev_moves_backward_in_history() -> io::Result<()> {
-        let (fs, mut tab, dirs) = tab_history()?;
-        let path = fs.path();
-
-        for dir in dirs.into_iter().rev() {
-            assert_eq_tab_path2(&tab, &dir);
-            debug!("Emitting Message::GoPrevious",);
-            tab.update(Message::GoPrevious, Modifiers::empty());
-        }
-        assert_eq_tab_path2(&tab, path);
-
-        Ok(())
-    }
-
-    #[test]
-    fn tab_scroll_up_with_ctrl_modifier_zooms() -> io::Result<()> {
-        let message_maybe =
-            respond_to_scroll_direction(ScrollDelta::Pixels { x: 0.0, y: 1.0 }, Modifiers::CTRL);
-        assert!(!message_maybe.is_none());
-        assert!(matches!(message_maybe.unwrap(), Message::ZoomIn));
-        Ok(())
-    }
-
-    #[test]
-    fn tab_scroll_up_without_ctrl_modifier_does_not_zoom() -> io::Result<()> {
-        let message_maybe =
-            respond_to_scroll_direction(ScrollDelta::Pixels { x: 0.0, y: 1.0 }, Modifiers::empty());
-        assert!(message_maybe.is_none());
-        Ok(())
-    }
-
-    #[test]
-    fn tab_scroll_down_with_ctrl_modifier_zooms() -> io::Result<()> {
-        let message_maybe =
-            respond_to_scroll_direction(ScrollDelta::Pixels { x: 0.0, y: -1.0 }, Modifiers::CTRL);
-        assert!(!message_maybe.is_none());
-        assert!(matches!(message_maybe.unwrap(), Message::ZoomOut));
-        Ok(())
-    }
-
-    #[test]
-    fn tab_scroll_down_without_ctrl_modifier_does_not_zoom() -> io::Result<()> {
-        let message_maybe = respond_to_scroll_direction(
-            ScrollDelta::Pixels { x: 0.0, y: -1.0 },
-            Modifiers::empty(),
-        );
-        assert!(message_maybe.is_none());
-        Ok(())
-    }
-    #[test]
-    fn tab_empty_history_does_nothing_on_prev_next() -> io::Result<()> {
-        let fs = simple_fs(0, NUM_NESTED, NUM_DIRS, 0, NAME_LEN)?;
-        let path = fs.path();
-        let mut tab = Tab::new(Location::Path(path.into()), TabConfig2::default());
-
-        // Tab's location shouldn't change if GoPrev or GoNext is triggered
-        debug!("Emitting Message::GoPrevious",);
-        tab.update(Message::GoPrevious, Modifiers::empty());
-        assert_eq_tab_path2(&tab, path);
-
-        debug!("Emitting Message::GoNext",);
-        tab.update(Message::GoNext, Modifiers::empty());
-        assert_eq_tab_path2(&tab, path);
-
-        Ok(())
-    }
-
-    #[test]
-    fn tab_locationup_moves_up_hierarchy() -> io::Result<()> {
-        let fs = simple_fs(0, NUM_NESTED, NUM_DIRS, 0, NAME_LEN)?;
-        let path = fs.path();
-        let mut next_dir = filter_dirs(path)?
-            .next()
-            .expect("should be at least one directory");
-
-        let mut tab = Tab::new(Location::Path(next_dir.clone()), TabConfig2::default());
-        // This will eventually yield false once root is hit
-        while next_dir.pop() {
-            debug!("Emitting Message::LocationUp",);
-            tab.update(Message::LocationUp, Modifiers::empty());
-            assert_eq_tab_path2(&tab, &next_dir);
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn sort_long_number_file_names() -> io::Result<()> {
-        let fs = empty_fs()?;
-        let path = fs.path();
-
-        // Create files with names 255 characters long that only contain a single number
-        // Example: 0000...0 for 255 characters
-        // https://en.wikipedia.org/wiki/Filename#Comparison_of_filename_limitations
-        let mut base_nums: Vec<_> = ('0'..'9').collect();
-        fastrand::shuffle(&mut base_nums);
-        debug!("Shuffled numbers for paths: {base_nums:?}");
-        let paths: Vec<_> = base_nums
-            .iter()
-            .map(|&base| path.join(std::iter::repeat(base).take(255).collect::<String>()))
-            .collect();
-
-        for (file, &base) in paths.iter().zip(base_nums.iter()) {
-            trace!("Creating long file name for {base}");
-            fs::File::create(file)?;
-        }
-
-        debug!("Creating tab for directory of long file names");
-        Tab::new(Location::Path(path.into()), TabConfig2::default());
-
-        Ok(())
-    }
 }
 
 #[derive(Clone)]

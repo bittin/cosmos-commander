@@ -35,7 +35,7 @@ use std::{
 };
 
 use crate::{
-    app::{Action, ContextPage, Message as AppMessage, PreviewItem1, PreviewItem2, PreviewKind},
+    app::{Action, ContextPage, Message as AppMessage, PreviewItem1, PreviewKind},
     config::{Config, Favorite, IconSizes, TabConfig1},
     fl, home_dir,
     key_bind::key_binds,
@@ -331,7 +331,6 @@ enum Message {
     TabMessage(tab1::Message),
     TabRescan(tab1::Location, Option<tab1::Item>, Vec<tab1::Item>),
     TabViewLeft(tab1::View),
-    TabViewRight(tab1::View),
     ToggleFoldersFirst,
     ZoomDefault,
     ZoomIn,
@@ -355,7 +354,6 @@ impl From<AppMessage> for Message {
                 log::warn!("{unsupported:?} not supported in dialog mode");
                 Message::None
             }
-            _ => Message::None
         }
     }
 }
@@ -729,7 +727,7 @@ impl Application for App {
     type Message = Message;
 
     /// The unique application ID to supply to the window manager.
-    const APP_ID: &'static str = "eu.fangornsrealm.cosmos-commanderDialog";
+    const APP_ID: &'static str = "eu.fangornsrealm.CosmosCommanderDialog";
 
     fn core(&self) -> &Core {
         &self.core
@@ -1518,9 +1516,6 @@ impl Application for App {
                 }
             }
             Message::TabViewLeft(view) => {
-                self.tab.config.view = view;
-            }
-            Message::TabViewRight(view) => {
                 self.tab.config.view = view;
             }
             Message::ToggleFoldersFirst => {

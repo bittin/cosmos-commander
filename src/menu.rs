@@ -792,7 +792,7 @@ pub fn dialog_menu1(
     .into()
 }
 
-pub fn dialog_menu2(
+pub fn _dialog_menu2(
     tab: &Tab2,
     key_binds: &HashMap<KeyBind, Action>,
     show_details: bool,

@@ -1,4 +1,4 @@
-cosmos-commander = COSMIC Commmander
+cosmos-commander = Cosmos Commmander
 empty-folder = Leerer Ordner
 empty-folder-hidden = Leerer Ordner (hat versteckte Elemente)
 no-results = Keine Ergebnisse gefunden
@@ -99,9 +99,22 @@ set-and-launch = Festlegen und starten
 owner = Eigentümer
 group = Gruppe
 other = Andere
-read = Lesen
-write = Schreiben
-execute = Ausführen
+### Mode 0
+none = Keine
+### Mode 1 (unusual)
+execute-only = Nur ausführen
+### Mode 2 (unusual)
+write-only = Nur schreiben
+### Mode 3 (unusual)
+write-execute = Schreiben und ausführen
+### Mode 4
+read-only = Nur lesen
+### Mode 5
+read-execute = Lesen und ausführen
+### Mode 6
+read-write = Lesen und schreiben
+### Mode 7
+read-write-execute = Lesen, schreiben und ausführen
 
 # Kontextseiten
 
@@ -260,10 +273,12 @@ select-all = Alles auswählen
 zoom-in = Vergrößern
 default-size = Standardgröße
 zoom-out = Verkleinern
-view = Ansichta
+view = Ansicht
+features = Funktionen
 show-button-row = Zeige Knopfreihe
 show-embedded-terminal = Zeige eingebautes Terminal
 show-second-panel = Zeige zweiten Dateimanager
+queue-file-operations = Führe Dateioperationen nacheinander aus
 f2-rename = F2 Umbenennen
 f3-view = F3 Ansicht
 f4-edit = F4 Bearbeiten
@@ -281,7 +296,7 @@ show-hidden-files = Versteckte Dateien anzeigen
 list-directories-first = Verzeichnisse zuerst auflisten
 gallery-preview = Galerie-Vorschau
 menu-settings = Einstellungen...
-menu-about = Über Cosmic Commander...
+menu-about = Über Cosmos Commander...
 
 ## Sortieren
 sort = Sortieren

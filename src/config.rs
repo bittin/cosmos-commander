@@ -24,6 +24,12 @@ pub const ICON_SIZE_GRID: u16 = 64;
 // TODO: 5 is an arbitrary number. Maybe there's a better icon size max
 pub const ICON_SCALE_MAX: u16 = 5;
 
+macro_rules! percent {
+    ($perc:expr, $pixel:ident) => {
+        (($perc.get() as f32 * $pixel as f32) / 100.).clamp(1., ($pixel * ICON_SCALE_MAX) as _)
+    };
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AppTheme {
     Dark,
@@ -279,6 +285,7 @@ pub struct Config {
     pub show_button_row: bool,
     pub show_embedded_terminal: bool,
     pub show_second_panel: bool,
+    pub queue_file_operations: bool,
     pub tab_left: TabConfig1,
     pub tab_right: TabConfig2,
     pub paths_left: Vec<String>,
@@ -376,6 +383,7 @@ impl Default for Config {
             show_button_row: true,
             show_embedded_terminal: true,
             show_second_panel: true,
+            queue_file_operations: true,
             tab_left: TabConfig1::default(),
             tab_right: TabConfig2::default(),
             paths_left: Vec::new(),
@@ -387,6 +395,8 @@ impl Default for Config {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, CosmicConfigEntry, Deserialize, Serialize)]
 #[serde(default)]
 pub struct DesktopConfig {
+    pub grid_spacing: NonZeroU16,
+    pub icon_size: NonZeroU16,
     pub show_content: bool,
     pub show_mounted_drives: bool,
     pub show_trash: bool,
@@ -395,10 +405,18 @@ pub struct DesktopConfig {
 impl Default for DesktopConfig {
     fn default() -> Self {
         Self {
+            grid_spacing: 100.try_into().unwrap(),
+            icon_size: 100.try_into().unwrap(),
             show_content: true,
             show_mounted_drives: false,
             show_trash: false,
         }
+    }
+}
+
+impl DesktopConfig {
+    pub fn grid_spacing_for(&self, space: u16) -> u16 {
+        percent!(self.grid_spacing, space) as _
     }
 }
 
