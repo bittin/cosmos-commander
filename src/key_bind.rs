@@ -101,16 +101,27 @@ pub fn key_binds_terminal() -> HashMap<KeyBind, Action> {
     let mut key_binds = HashMap::new();
 
     macro_rules! bind {
-        ([$($modifier:ident),+ $(,)?], $key:expr, $action:ident) => {{
+        ([$($modifier:ident),* $(,)?], $key:expr, $action:ident) => {{
             key_binds.insert(
                 KeyBind {
-                    modifiers: vec![$(Modifier::$modifier),+],
+                    modifiers: vec![$(Modifier::$modifier),*],
                     key: $key,
                 },
                 Action::$action,
             );
         }};
     }
+
+    bind!([Shift], Key::Named(Named::Tab), SwapPanels);
+    bind!([], Key::Named(Named::F2), F2Rename);
+    bind!([], Key::Named(Named::F3), F3View);
+    bind!([], Key::Named(Named::F4), F4Edit);
+    bind!([], Key::Named(Named::F5), F5Copy);
+    bind!([], Key::Named(Named::F6), F6Move);
+    bind!([], Key::Named(Named::F7), F7Mkdir);
+    bind!([], Key::Named(Named::F8), F8Delete);
+    bind!([], Key::Named(Named::F9), F9Terminal);
+    bind!([], Key::Named(Named::F10), F10Quit);
 
     // Standard key bindings
     bind!([Ctrl, Shift], Key::Character("A".into()), SelectAll);
