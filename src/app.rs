@@ -165,6 +165,7 @@ pub enum Action {
     TabNew,
     TabNext,
     TabPrev,
+    TabRescan,
     TabViewGridLeft,
     TabViewGridRight,
     TabViewListLeft,
@@ -247,6 +248,7 @@ impl Action {
             Action::TabNew => Message::TabNew,
             Action::TabNext => Message::TabNext,
             Action::TabPrev => Message::TabPrev,
+            Action::TabRescan => Message::TabRescan,
             Action::TabViewGridLeft => Message::TabViewLeft(entity_opt, tab1::View::Grid),
             Action::TabViewGridRight => Message::TabViewRight(entity_opt, tab2::View::Grid),
             Action::TabViewListLeft => Message::TabViewLeft(entity_opt, tab1::View::List),
@@ -594,6 +596,7 @@ pub enum Message {
     PendingPause(u64, bool),
     PendingPauseAll(bool),
     Preview(Option<Entity>),
+    QueueFileOperations(bool),
     RescanTrash,
     Rename(Option<Entity>),
     ReplaceResult(ReplaceResult),
@@ -621,6 +624,7 @@ pub enum Message {
     TabActivateRightEntity(Entity),
     TabNext,
     TabPrev,
+    TabRescan,
     TabClose(Option<Entity>),
     TabCloseLeft(Option<Entity>),
     TabCloseRight(Option<Entity>),
@@ -869,6 +873,7 @@ pub struct App {
     overlap: HashMap<String, (window::Id, Rectangle)>,
     pending_operation_id: u64,
     pending_operations: BTreeMap<u64, (Operation, Controller)>,
+    fileops: BTreeMap<u64, (Operation, Controller)>,
     progress_operations: BTreeSet<u64>,
     complete_operations: BTreeMap<u64, Operation>,
     failed_operations: BTreeMap<u64, (Operation, Controller, String)>,
@@ -1210,8 +1215,25 @@ impl App {
         if operation.show_progress_notification() {
             self.progress_operations.insert(id);
         }
-        self.pending_operations
-            .insert(id, (operation, Controller::default()));
+        if self.config.queue_file_operations {
+            match operation {
+                Operation::Copy { to, paths } => {
+                    self.fileops.insert(id, (Operation::Copy { to, paths }, Controller::default()));
+                }
+                Operation::Move { to, paths } => {
+                    self.fileops.insert(id, (Operation::Move { to, paths }, Controller::default()));
+                }
+                _ => {
+                    self.pending_operations
+                    .insert(id, (operation, Controller::default()));
+                }
+            }
+        } else {
+            self.pending_operations
+                    .insert(id, (operation, Controller::default()));
+        }
+
+        
     }
 
     fn remove_window(&mut self, id: &window::Id) {
@@ -2418,15 +2440,22 @@ impl App {
                 .title(fl!("view"))
                 .add(
                     widget::settings::item::builder(fl!("show-button-row"))
-                        .toggler(self.show_button_row, Message::ShowButtonRow),
+                        .toggler(self.config.show_button_row, Message::ShowButtonRow),
                 )
                 .add(
                     widget::settings::item::builder(fl!("show-embedded-terminal"))
-                        .toggler(self.show_embedded_terminal, Message::ShowEmbeddedTerminal),
+                        .toggler(self.config.show_embedded_terminal, Message::ShowEmbeddedTerminal),
                 )
                 .add(
                     widget::settings::item::builder(fl!("show-second-panel"))
-                        .toggler(self.show_second_panel, Message::ShowSecondPanel),
+                        .toggler(self.config.show_second_panel, Message::ShowSecondPanel),
+                )
+                .into(),
+                widget::settings::section()
+                .title(fl!("features"))
+                .add(
+                    widget::settings::item::builder(fl!("queue-file-operations"))
+                        .toggler(self.config.queue_file_operations, Message::QueueFileOperations),
                 )
                 .into(),
         ])
@@ -2810,6 +2839,7 @@ impl Application for App {
             overlap: HashMap::new(),
             pending_operation_id: 0,
             pending_operations: BTreeMap::new(),
+            fileops: BTreeMap::new(),
             progress_operations: BTreeSet::new(),
             complete_operations: BTreeMap::new(),
             failed_operations: BTreeMap::new(),
@@ -2944,7 +2974,7 @@ impl Application for App {
         entity: widget::nav_bar::Id,
     ) -> Option<Vec<widget::menu::Tree<cosmic::app::Message<Self::Message>>>> {
         let favorite_index_opt = self.nav_model.data::<FavoriteIndex>(entity);
-        let mut location_opt = self.nav_model.data::<Location1>(entity);
+        let location_opt = self.nav_model.data::<Location1>(entity);
         if self.active_panel == 2 && location_opt.is_some() {
             let location_opt2;
             if let Some(path) = location_opt.unwrap().path_opt() {
@@ -4800,6 +4830,11 @@ impl Application for App {
                     }
                 }
             }
+            Message::QueueFileOperations(show) => {
+                self.config.queue_file_operations = show;
+                config_set!(queue_file_operations, self.config.queue_file_operations);
+                return self.update_config();
+            }
             Message::RescanTrash => {
                 // Update trash icon if empty/full
                 let maybe_entity = self.nav_model.iter().find(|&entity| {
@@ -5040,18 +5075,18 @@ impl Application for App {
                 return self.update_config();
             }
             Message::ShowButtonRow(show) => {
-                self.show_button_row = show;
-                config_set!(show_button_row, self.show_button_row);
+                self.config.show_button_row = show;
+                config_set!(show_button_row, self.config.show_button_row);
                 return self.update_config();
             }
             Message::ShowEmbeddedTerminal(show) => {
-                self.show_embedded_terminal = show;
-                config_set!(show_embedded_terminal, self.show_embedded_terminal);
+                self.config.show_embedded_terminal = show;
+                config_set!(show_embedded_terminal, self.config.show_embedded_terminal);
                 return self.update_config();
             }
             Message::ShowSecondPanel(show) => {
-                self.show_second_panel = show;
-                config_set!(show_second_panel, self.show_second_panel);
+                self.config.show_second_panel = show;
+                config_set!(show_second_panel, self.config.show_second_panel);
                 return self.update_config();
             }
             Message::StoreOpenPaths => {
@@ -5188,6 +5223,23 @@ impl Application for App {
                     let entity = self.tab_model2.iter().nth(pos);
                     if let Some(entity) = entity {
                         return self.update(Message::TabActivate(entity));
+                    }
+                }
+            }
+            Message::TabRescan => {
+                if self.active_panel == 1 {
+                    let entity = self.tab_model1.active();
+                    if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
+                        let location = tab.location.clone();
+
+                        return self.update(Message::TabRescanLeft(entity, location, None, Vec::new(), None));
+                    }
+                } else {
+                    let entity = self.tab_model2.active();
+                    if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
+                        let location = tab.location.clone();
+
+                        return self.update(Message::TabRescanRight(entity, location, None, Vec::new(), None));
                     }
                 }
             }
@@ -5682,7 +5734,7 @@ impl Application for App {
                     }
                 }
             }
-            Message::TabViewLeft(entity_opt, view) => {
+            Message::TabViewLeft(_entity_opt, view) => {
                 let entity = self.tab_model1.active();
                 if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                     tab.config.view = view;
@@ -5691,7 +5743,7 @@ impl Application for App {
                     return self.update(Message::TabConfigLeft(config));
                 }
             }
-            Message::TabViewRight(entity_opt, view) => {
+            Message::TabViewRight(_entity_opt, view) => {
                 let entity = self.tab_model1.active();
                 if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
                     tab.config.view = view;
@@ -5883,7 +5935,7 @@ impl Application for App {
                     log::error!("failed to get current executable path: {}", err);
                 }
             },
-            Message::ZoomDefault(entity_opt) => {
+            Message::ZoomDefault(_entity_opt) => {
                 let entity;
                 if self.active_panel == 1 {
                     entity = self.tab_model1.active();
@@ -8135,7 +8187,7 @@ pub(crate) mod test_utils {
         Ok((fs, tab))
     }
 
-    pub fn tab_click_new2(
+    pub fn _tab_click_new2(
         files: usize,
         hidden: usize,
         dirs: usize,
@@ -8187,7 +8239,7 @@ pub(crate) mod test_utils {
             && is_hidden == item.hidden
     }
 
-    pub fn eq_path_item2(path: &Path, item: &crate::tab2::Item) -> bool {
+    pub fn _eq_path_item2(path: &Path, item: &crate::tab2::Item) -> bool {
         let name = path
             .file_name()
             .expect("temp entries should have names")
@@ -8215,7 +8267,7 @@ pub(crate) mod test_utils {
     }
 
     /// Asserts `tab`'s location changed to `path`
-    pub fn assert_eq_tab_path2(tab: &Tab2, path: &Path) {
+    pub fn _assert_eq_tab_path2(tab: &Tab2, path: &Path) {
         // Paths should be the same
         let Some(tab_path) = tab.location.path_opt() else {
             panic!("Expected tab's location to be a path");
