@@ -733,9 +733,14 @@ pub enum DialogPage {
         to: PathBuf,
         name: String,
         archive_type: ArchiveType,
+        password: Option<String>,
     },
     EmptyTrash,
     FailedOperation(u64),
+    ExtractPassword {
+        id: u64,
+        password: String,
+    },
     MountError {
         mounter_key: MounterKey,
         item: MounterItem,
@@ -2105,7 +2110,9 @@ impl App {
     }
 
     fn desktop_view_options(&self) -> Element<Message> {
-        let cosmic_theme::Spacing { space_l, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing {
+            space_m, space_l, ..
+        } = theme::active().cosmic().spacing;
         let config = self.config.desktop;
 
         let mut children = Vec::new();
@@ -2146,19 +2153,30 @@ impl App {
         );
         children.push(section.into());
 
-        /*TODO: Desktop icon size and spacing
         let mut section = widget::settings::section().title(fl!("icon-size-and-spacing"));
-        let grid: u16 = config.icon_sizes.grid.into();
+        let icon_size: u16 = config.icon_size.into();
         section = section.add(
             widget::settings::item::builder(fl!("icon-size"))
-                .description(format!("{}%", grid))
+                .description(format!("{}%", icon_size))
                 .control(
-                    widget::slider(50..=500, grid, move |grid| {
+                    widget::slider(50..=500, icon_size, move |icon_size| {
                         Message::DesktopConfig(DesktopConfig {
-                            icon_sizes: IconSizes {
-                                grid: NonZeroU16::new(grid).unwrap(),
-                                ..config.icon_sizes
-                            },
+                            icon_size: NonZeroU16::new(icon_size).unwrap(),
+                            ..config
+                        })
+                    })
+                    .step(25u16),
+                ),
+        );
+
+        let grid_spacing: u16 = config.grid_spacing.into();
+        section = section.add(
+            widget::settings::item::builder(fl!("grid-spacing"))
+                .description(format!("{}%", grid_spacing))
+                .control(
+                    widget::slider(50..=500, grid_spacing, move |grid_spacing| {
+                        Message::DesktopConfig(DesktopConfig {
+                            grid_spacing: NonZeroU16::new(grid_spacing).unwrap(),
                             ..config
                         })
                     })
@@ -2166,10 +2184,10 @@ impl App {
                 ),
         );
         children.push(section.into());
-        */
 
         widget::column::with_children(children)
             .padding([0, space_l, space_l, space_l])
+            .spacing(space_m)
             .into()
     }
 
@@ -3155,6 +3173,10 @@ impl Application for App {
             self.set_show_context(false);
             return cosmic::task::message(app::Message::App(Message::SetShowDetails(false)));
         }
+        if self.search_get().is_some() {
+            // Close search if open
+            return self.search_set_active(None);
+        }
 
         if self.active_panel == 1 {
             let entity = self.tab_model1.active();
@@ -3278,6 +3300,7 @@ impl Application for App {
                             to,
                             name,
                             archive_type,
+                            password: None,
                         });
                         return widget::text_input::focus(self.dialog_text_input.clone());
                     }
@@ -3423,6 +3446,7 @@ impl Application for App {
                             to,
                             name,
                             archive_type,
+                            password,
                         } => {
                             let extension = archive_type.extension();
                             let name = format!("{}{}", name, extension);
@@ -3431,6 +3455,7 @@ impl Application for App {
                                 paths,
                                 to,
                                 archive_type,
+                                password,
                             })
                         }
                         DialogPage::EmptyTrash => {
@@ -3438,6 +3463,18 @@ impl Application for App {
                         }
                         DialogPage::FailedOperation(id) => {
                             log::warn!("TODO: retry operation {}", id);
+                        }
+                        DialogPage::ExtractPassword { id, password } => {
+                            let (operation, _, _err) = self.failed_operations.get(&id).unwrap();
+                            let new_op = match &operation {
+                                Operation::Extract { to, paths, .. } => Operation::Extract {
+                                    to: to.clone(),
+                                    paths: paths.clone(),
+                                    password: Some(password),
+                                },
+                                _ => unreachable!(),
+                            };
+                            self.operation(new_op);
                         }
                         DialogPage::MountError {
                             mounter_key,
@@ -3594,6 +3631,7 @@ impl Application for App {
                     self.operation(Operation::Extract {
                         paths,
                         to: destination,
+                        password: None,
                     });
                 }
             }
@@ -6659,6 +6697,7 @@ impl Application for App {
                 to,
                 name,
                 archive_type,
+                password,
             } => {
                 let mut dialog = widget::dialog().title(fl!("create-archive"));
 
@@ -6691,7 +6730,7 @@ impl Application for App {
 
                 let archive_types = ArchiveType::all();
                 let selected = archive_types.iter().position(|&x| x == *archive_type);
-                dialog
+                dialog = dialog
                     .primary_action(
                         widget::button::suggested(fl!("create"))
                             .on_press_maybe(complete_maybe.clone()),
@@ -6711,9 +6750,10 @@ impl Application for App {
                                             to: to.clone(),
                                             name: name.clone(),
                                             archive_type: *archive_type,
+                                            password: password.clone(),
                                         })
                                     })
-                                    .on_submit_maybe(complete_maybe)
+                                    .on_submit_maybe(complete_maybe.clone())
                                     .into(),
                                 widget::dropdown(archive_types, selected, move |index| {
                                     Message::DialogUpdate(DialogPage::Compress {
@@ -6721,6 +6761,7 @@ impl Application for App {
                                         to: to.clone(),
                                         name: name.clone(),
                                         archive_type: archive_types[index],
+                                        password: password.clone(),
                                     })
                                 })
                                 .into(),
@@ -6730,7 +6771,29 @@ impl Application for App {
                             .into(),
                         ])
                         .spacing(space_xxs),
-                    )
+                    );
+
+                if *archive_type == ArchiveType::Zip {
+                    let password_unwrapped = password.clone().unwrap_or_else(String::default);
+                    dialog = dialog.control(widget::column::with_children(vec![
+                        widget::text::body(fl!("password")).into(),
+                        widget::text_input("", password_unwrapped)
+                            .password()
+                            .on_input(move |password_unwrapped| {
+                                Message::DialogUpdate(DialogPage::Compress {
+                                    paths: paths.clone(),
+                                    to: to.clone(),
+                                    name: name.clone(),
+                                    archive_type: *archive_type,
+                                    password: Some(password_unwrapped),
+                                })
+                            })
+                            .on_submit_maybe(complete_maybe)
+                            .into(),
+                    ]));
+                }
+
+                dialog
             }
             DialogPage::EmptyTrash => widget::dialog()
                 .title(fl!("empty-trash"))
@@ -6752,6 +6815,23 @@ impl Application for App {
                     .icon(widget::icon::from_name("dialog-error").size(64))
                     //TODO: retry action
                     .primary_action(
+                        widget::button::standard(fl!("cancel")).on_press(Message::DialogCancel),
+                    )
+            }
+            DialogPage::ExtractPassword { id, password } => {
+                widget::dialog()
+                    .title(fl!("extract-password-required"))
+                    .icon(widget::icon::from_name("dialog-error").size(64))
+                    .control(widget::text_input("", password).password().on_input(
+                        move |password| {
+                            Message::DialogUpdate(DialogPage::ExtractPassword { id: *id, password })
+                        },
+                    ))
+                    .primary_action(
+                        widget::button::suggested(fl!("extract-here"))
+                            .on_press(Message::DialogComplete),
+                    )
+                    .secondary_action(
                         widget::button::standard(fl!("cancel")).on_press(Message::DialogCancel),
                     )
             }
