@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: cosmos-commander
+Upstream-Name: commander
 Upstream-Contact: Alexander Schwarzkopf <progs@fangornsrealm.eu>
-Source: https://github.com/fangornsrealm/cosmos-commander
+Source: https://github.com/fangornsrealm/commander
 Files: *
 Copyright: System76 <info@system76.com>
 License: GPL-3.0

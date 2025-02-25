@@ -1,5 +1,5 @@
-name := 'cosmos-commander'
-export APPID := 'eu.fangornsrealm.cosmos-commander'
+name := 'commander'
+export APPID := 'eu.fangornsrealm.commander'
 
 rootdir := ''
 prefix := '/usr'
@@ -74,16 +74,16 @@ test *args:
     cargo test {{args}}
 
 flamegraph *args:
-    cargo flamegraph --release --bin cosmos-commander -- --no-daemon {{args}}
+    cargo flamegraph --release --bin commander -- --no-daemon {{args}}
     xdg-open flamegraph.svg
 
 heaptrack *args:
     #!/usr/bin/env bash
     set -ex
-    rm -fv heaptrack.cosmos-commander.*
-    cargo heaptrack --profile release-with-debug --bin cosmos-commander -- --no-daemon {{args}}
-    zstd -dc < heaptrack.cosmos-commander.*.raw.zst | /usr/lib/heaptrack/libexec/heaptrack_interpret | zstd -c > heaptrack.cosmos-commander.zst
-    heaptrack_gui heaptrack.cosmos-commander.zst
+    rm -fv heaptrack.commander.*
+    cargo heaptrack --profile release-with-debug --bin commander -- --no-daemon {{args}}
+    zstd -dc < heaptrack.commander.*.raw.zst | /usr/lib/heaptrack/libexec/heaptrack_interpret | zstd -c > heaptrack.commander.zst
+    heaptrack_gui heaptrack.commander.zst
 
 # Installs files
 install:

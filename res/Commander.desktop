@@ -1,11 +1,11 @@
 #TODO: more build-out, desktop actions, translations?
 [Desktop Entry]
 Name=Cosmic Commander
-Exec=cosmos-commander %F
+Exec=commander %F
 Terminal=false
 Type=Application
 StartupNotify=true
-Icon=eu.fangornsrealm.CosmosCommander
+Icon=eu.fangornsrealm.Commander
 Categories=COSMIC;Utility;Files
 Keywords=Folder;Manager;
 MimeType=inode/directory;

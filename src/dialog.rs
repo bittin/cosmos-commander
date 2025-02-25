@@ -727,7 +727,7 @@ impl Application for App {
     type Message = Message;
 
     /// The unique application ID to supply to the window manager.
-    const APP_ID: &'static str = "eu.fangornsrealm.CosmosCommanderDialog";
+    const APP_ID: &'static str = "eu.fangornsrealm.CommanderDialog";
 
     fn core(&self) -> &Core {
         &self.core
@@ -1288,7 +1288,7 @@ impl Application for App {
                                 let _ = update_recently_used(
                                     &path.clone(),
                                     App::APP_ID.to_string(),
-                                    "cosmos-commander".to_string(),
+                                    "commander".to_string(),
                                     None,
                                 );
                             }

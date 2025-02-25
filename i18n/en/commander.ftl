@@ -1,4 +1,4 @@
-cosmos-commander = COSMOS Commmander
+commander = COSMOS Commmander
 empty-folder = Empty folder
 empty-folder-hidden = Empty folder (has hidden items)
 no-results = No results found
@@ -301,7 +301,7 @@ show-hidden-files = Show hidden files
 list-directories-first = List directories first
 gallery-preview = Gallery preview
 menu-settings = Settings...
-menu-about = About Cosmos Commander...
+menu-about = About  Commander...
 
 ## Sort
 sort = Sort

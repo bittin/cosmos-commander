@@ -4,7 +4,7 @@ use cosmic::{
     iced::{window, Subscription},
     widget, Application, Element,
 };
-use cosmos_commander::dialog::{Dialog, DialogKind, DialogMessage, DialogResult};
+use commander::dialog::{Dialog, DialogKind, DialogMessage, DialogResult};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
@@ -32,7 +32,7 @@ impl Application for App {
     type Flags = ();
     type Message = Message;
 
-    const APP_ID: &'static str = "eu.fangornsrealm.cosmos-commanderDialogExample";
+    const APP_ID: &'static str = "eu.fangornsrealm.commanderDialogExample";
 
     fn core(&self) -> &Core {
         &self.core
