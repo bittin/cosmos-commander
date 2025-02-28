@@ -2481,7 +2481,7 @@ impl App {
     }
 
     fn view_pane_content(&self, id: pane_grid::Pane, pane: &Pane, _size: Size) -> Element<Message> {
-        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing { space_xxs, space_s, .. } = theme::active().cosmic().spacing;
 
         if pane.id == PaneType::LeftPane || pane.id == PaneType::RightPane {
             let mut tab_column = widget::column::with_capacity(4);
@@ -2517,7 +2517,7 @@ impl App {
                     )
                     .class(style::Container::Background)
                     .width(Length::Fill)
-                    .padding([0, space_xxs]),
+                    .padding([0, space_s]),
                 );
                 let entity_left = self.tab_model1.active();
                 if let Some(tab) = self.tab_model1.data::<Tab1>(entity_left) {
@@ -2547,7 +2547,7 @@ impl App {
                             .drag_id(self.tab_drag_id_right),
                     )
                     .class(style::Container::Background)
-                    .padding([0, space_xxs]),
+                    .padding([0, space_s]),
                 );
                 let entity_right = self.tab_model2.active();
                 if let Some(tab) = self.tab_model2.data::<Tab2>(entity_right) {
@@ -2632,7 +2632,7 @@ impl App {
                     //})
                     //.on_middle_click(move || Message::TermMiddleClick(pane, Some(entity_middle_click)))
                     .opacity(1.0)
-                    .padding(space_xxs)
+                    .padding(space_s)
                     .show_headerbar(false);
 
                 tab_column = tab_column
