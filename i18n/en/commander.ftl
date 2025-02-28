@@ -1,4 +1,4 @@
-commander = COSMOS Commmander
+commander = Commmander
 empty-folder = Empty folder
 empty-folder-hidden = Empty folder (has hidden items)
 no-results = No results found

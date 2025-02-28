@@ -1,4 +1,4 @@
-cosmos-commander = COSMIC Commmander
+cosmos-commander = Commmander
 empty-folder = Tom katalog
 empty-folder-hidden = Tom katalog (har dolda objekt)
 no-results = Inga resultat hittades
