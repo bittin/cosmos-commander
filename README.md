@@ -9,6 +9,17 @@ This project is based on [COSMIC files](https://github.com/pop-os/cosmic-files) 
 > [!NOTE]
 > The basic functionality is working. Two panels, copying or moving files or tabs between them. A Terminal to run commands. And all the features of COSMIC Files that it inherits. Good enough to close krusader and use commander instead. Further features will be coming as needed. Or as requested by users.
 
+## Install
+
+```sh
+# Clone the project using `git`
+git clone https://github.com/fangornsrealm/commander
+# Change to the directory that was created by `git`
+cd commander
+# install
+sudo just install
+```
+
 ## Build the project from source
 
 ```sh

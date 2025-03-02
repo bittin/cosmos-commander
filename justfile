@@ -44,7 +44,6 @@ clean-dist: clean clean-vendor
 # Compiles with debug profile
 build-debug *args:
     cargo build {{args}}
-    cargo build --package {{applet-name}} {{args}}
 
 # Compiles with release profile
 build-release *args: (build-debug '--release' args)
@@ -88,7 +87,6 @@ heaptrack *args:
 # Installs files
 install:
     install -Dm0755 {{bin-src}} {{bin-dst}}
-    install -Dm0755 {{applet-src}} {{applet-dst}}
     install -Dm0644 {{desktop-src}} {{desktop-dst}}
     install -Dm0644 {{metainfo-src}} {{metainfo-dst}}
     for size in `ls {{icons-src}}`; do \
