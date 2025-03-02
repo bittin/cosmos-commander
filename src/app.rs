@@ -476,6 +476,19 @@ fn pane_setup(
     (panestates, panes, splits)
 }
 
+fn convert_location1_to_location2(location: &Location1) -> Location2 {
+    let loc;
+    match location {
+        Location1::Path(path) => loc = Location2::Path(path.to_owned()),
+        Location1::Trash => loc = Location2::Trash,
+        Location1::Network(s1, s2) => loc = Location2::Network(s1.clone(), s2.clone()),
+        Location1::Recents => loc = Location2::Recents,
+        Location1::Search(path, s, b, i) => loc = Location2::Search(path.to_owned(), s.clone(), b.to_owned(), i.to_owned()),
+        Location1::Desktop(p, s, d) => loc = Location2::Desktop(p.to_owned(), s.to_owned(), d.to_owned()),
+    }
+    loc
+}
+
 fn convert_location2_to_location1(location: &Location2) -> Location1 {
     let loc;
     match location {
@@ -3290,12 +3303,13 @@ impl Application for App {
                     saveactive = PaneType::LeftPane;
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         let location = tab.location.clone();
+                        let newlocation = convert_location1_to_location2(&location);
                         // create a new tab in the other panel
                         self.active_panel = tempactive;
-                        let _ = self.update(Message::TabCreateLeft(Some(location.clone())));
+                        let _ = self.update(Message::TabCreateRight(Some(newlocation.clone())));
                         let _ = self.update_title();
-                        let _ = self.update_watcher_left();
-                        let _ = self.update_tab_left(entity, location, None);
+                        let _ = self.update_watcher_right();
+                        let _ = self.update_tab_right(entity, newlocation, None);
                         self.active_panel = saveactive;
                     }
                 } else {
@@ -3306,10 +3320,11 @@ impl Application for App {
                         let location = tab.location.clone();
                         // create a new tab in the other panel
                         self.active_panel = tempactive;
-                        let _ = self.update(Message::TabCreateRight(Some(location.clone())));
+                        let newlocation = convert_location2_to_location1(&location);
+                        let _ = self.update(Message::TabCreateLeft(Some(newlocation.clone())));
                         let _ = self.update_title();
-                        let _ = self.update_watcher_right();
-                        let _ = self.update_tab_right(entity, location, None);
+                        let _ = self.update_watcher_left();
+                        let _ = self.update_tab_left(entity, newlocation, None);
                         self.active_panel = saveactive;
                     }
                 }
@@ -3809,17 +3824,17 @@ impl Application for App {
                 let saveactive;
                 if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
-                    tempactive = PaneType::RightPane;
-                    saveactive = PaneType::LeftPane;
+                    tempactive = PaneType::LeftPane;
+                    saveactive = PaneType::RightPane;
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         let location = tab.location.clone();
+                        let newlocation = convert_location1_to_location2(&location);
                         // create a new tab in the other panel
                         self.active_panel = tempactive;
-                        let _ = self.update(Message::TabCreateLeft(Some(location.clone())));
+                        let _ = self.update(Message::TabCreateRight(Some(newlocation.clone())));
                         let _ = self.update_title();
-                            let _ = self.update_watcher_left();
-                            let _ = self.update_tab_left(entity, location, None);
-                        // Close the old panel
+                        let _ = self.update_watcher_right();
+                        let _ = self.update_tab_right(entity, newlocation, None);
                         self.active_panel = saveactive;
                         let _ = self.update(Message::TabClose(entity_opt));
                     }
@@ -3831,11 +3846,11 @@ impl Application for App {
                         let location = tab.location.clone();
                         // create a new tab in the other panel
                         self.active_panel = tempactive;
-                        let _ = self.update(Message::TabCreateRight(Some(location.clone())));
+                        let newlocation = convert_location2_to_location1(&location);
+                        let _ = self.update(Message::TabCreateLeft(Some(newlocation.clone())));
                         let _ = self.update_title();
-                            let _ = self.update_watcher_right();
-                            let _ = self.update_tab_right(entity, location, None);
-                        // Close the old panel
+                        let _ = self.update_watcher_left();
+                        let _ = self.update_tab_left(entity, newlocation, None);
                         self.active_panel = saveactive;
                         let _ = self.update(Message::TabClose(entity_opt));
                     }
