@@ -12,10 +12,6 @@ cargo-target-dir := env('CARGO_TARGET_DIR', 'target')
 bin-src := cargo-target-dir / 'release' / name
 bin-dst := base-dir / 'bin' / name
 
-applet-name := name + '-applet'
-applet-src := cargo-target-dir / 'release' / applet-name
-applet-dst := base-dir / 'bin' / applet-name
-
 desktop := APPID + '.desktop'
 desktop-src := 'res' / desktop
 desktop-dst := clean(rootdir / prefix) / 'share' / 'applications' / desktop
@@ -95,7 +91,7 @@ install:
 
 # Uninstalls installed files
 uninstall:
-    rm -f {{bin-dst}} {{applet-dst}}
+    rm -f {{bin-dst}}
 
 # Vendor dependencies locally
 vendor:
