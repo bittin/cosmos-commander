@@ -476,6 +476,19 @@ fn pane_setup(
     (panestates, panes, splits)
 }
 
+fn convert_location2_to_location1(location: &Location2) -> Location1 {
+    let loc;
+    match location {
+        Location2::Path(path) => loc = Location1::Path(path.to_owned()),
+        Location2::Trash => loc = Location1::Trash,
+        Location2::Network(s1, s2) => loc = Location1::Network(s1.clone(), s2.clone()),
+        Location2::Recents => loc = Location1::Recents,
+        Location2::Search(path, s, b, i) => loc = Location1::Search(path.to_owned(), s.clone(), b.to_owned(), i.to_owned()),
+        Location2::Desktop(p, s, d) => loc = Location1::Desktop(p.to_owned(), s.to_owned(), d.to_owned()),
+    }
+    loc
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum NavMenuAction {
     Open(segmented_button::Entity),
@@ -1691,10 +1704,11 @@ impl App {
     }
 
     fn activate_nav_model_location_right(&mut self, location: &Location2) {
+        let loc = convert_location2_to_location1(location);
         let nav_bar_id = self.nav_model.iter().find(|&id| {
             self.nav_model
-                .data::<Location2>(id)
-                .map(|l| l == location)
+                .data::<Location1>(id)
+                .map(|l| *l == loc)
                 .unwrap_or_default()
         });
 
@@ -1706,7 +1720,7 @@ impl App {
         }
     }
 
-    fn update_nav_model_left(&mut self) {
+    fn update_nav_model(&mut self) {
         let mut nav_model = segmented_button::ModelBuilder::default();
 
         nav_model = nav_model.insert(|b| {
@@ -1793,8 +1807,11 @@ impl App {
                 b
             });
         }
-
         self.nav_model = nav_model.build();
+    }
+
+    fn update_nav_model_left(&mut self) {
+        self.update_nav_model();
 
         let tab_entity = self.tab_model1.active();
         if let Some(tab) = self.tab_model1.data::<Tab1>(tab_entity) {
@@ -1803,94 +1820,7 @@ impl App {
     }
 
     fn update_nav_model_right(&mut self) {
-        let mut nav_model = segmented_button::ModelBuilder::default();
-
-        nav_model = nav_model.insert(|b| {
-            b.text(fl!("recents"))
-                .icon(widget::icon::from_name("document-open-recent-symbolic"))
-                .data(Location2::Recents)
-        });
-
-        for (favorite_i, favorite) in self.config.favorites.iter().enumerate() {
-            if let Some(path) = favorite.path_opt() {
-                let name = if matches!(favorite, Favorite::Home) {
-                    fl!("home")
-                } else if let Some(file_name) = path.file_name().and_then(|x| x.to_str()) {
-                    file_name.to_string()
-                } else {
-                    fl!("filesystem")
-                };
-                nav_model = nav_model.insert(move |b| {
-                    b.text(name.clone())
-                        .icon(
-                            widget::icon::icon(if path.is_dir() {
-                                tab2::folder_icon_symbolic(&path, 16)
-                            } else {
-                                widget::icon::from_name("text-x-generic-symbolic")
-                                    .size(16)
-                                    .handle()
-                            })
-                            .size(16),
-                        )
-                        .data(Location2::Path(path.clone()))
-                        .data(FavoriteIndex(favorite_i))
-                });
-            }
-        }
-
-        nav_model = nav_model.insert(|b| {
-            b.text(fl!("trash"))
-                .icon(widget::icon::icon(tab2::trash_icon_symbolic(16)))
-                .data(Location2::Trash)
-                .divider_above()
-        });
-
-        if !MOUNTERS.is_empty() {
-            nav_model = nav_model.insert(|b| {
-                b.text(fl!("networks"))
-                    .icon(widget::icon::icon(
-                        widget::icon::from_name("network-workgroup-symbolic")
-                            .size(16)
-                            .handle(),
-                    ))
-                    .data(Location2::Network(
-                        "network:///".to_string(),
-                        fl!("networks"),
-                    ))
-                    .divider_above()
-            });
-        }
-
-        // Collect all mounter items
-        let mut nav_items = Vec::new();
-        for (key, items) in self.mounter_items.iter() {
-            for item in items.iter() {
-                nav_items.push((*key, item));
-            }
-        }
-        // Sort by name lexically
-        nav_items.sort_by(|a, b| LANGUAGE_SORTER.compare(&a.1.name(), &b.1.name()));
-        // Add items to nav model
-        for (i, (key, item)) in nav_items.into_iter().enumerate() {
-            nav_model = nav_model.insert(|mut b| {
-                b = b.text(item.name()).data(MounterData(key, item.clone()));
-                if let Some(path) = item.path() {
-                    b = b.data(Location2::Path(path.clone()));
-                }
-                if let Some(icon) = item.icon(true) {
-                    b = b.icon(widget::icon::icon(icon).size(16));
-                }
-                if item.is_mounted() {
-                    b = b.closable();
-                }
-                if i == 0 {
-                    b = b.divider_above();
-                }
-                b
-            });
-        }
-
-        self.nav_model = nav_model.build();
+        self.update_nav_model();
 
         let tab_entity = self.tab_model2.active();
         if let Some(tab) = self.tab_model2.data::<Tab2>(tab_entity) {
