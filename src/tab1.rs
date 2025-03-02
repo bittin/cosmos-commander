@@ -4475,7 +4475,7 @@ impl Tab {
             })
             .unwrap_or_default();
         let item_view =
-            DndSource::<Message, ClipboardCopy>::with_id(item_view, Id::new("tab-view"));
+            DndSource::<Message, ClipboardCopy>::with_id(item_view, Id::new("tab-view-left"));
 
         let item_view = match drag_list {
             Some(drag_list) if self.selected_clicked => {
