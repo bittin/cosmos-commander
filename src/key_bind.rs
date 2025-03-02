@@ -66,6 +66,7 @@ pub fn key_binds(mode: &tab1::Mode) -> HashMap<KeyBind, Action> {
         bind!([Ctrl], Key::Character("r".into()), TabRescan);
         bind!([Ctrl], Key::Character(",".into()), Settings);
         bind!([Ctrl], Key::Character("w".into()), TabClose);
+        bind!([Ctrl], Key::Character("s".into()), SwapPanels);
         bind!([Ctrl], Key::Character("t".into()), TabNew);
         bind!([Ctrl], Key::Named(Named::Tab), TabNext);
         bind!([Ctrl, Shift], Key::Named(Named::Tab), TabPrev);

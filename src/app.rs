@@ -863,7 +863,7 @@ pub struct App {
     term_event_tx_opt:
         Option<mpsc::UnboundedSender<(pane_grid::Pane, Entity, alacritty_terminal::event::Event)>>,
     terminal: Option<Mutex<crate::terminal::Terminal>>,
-    active_panel: u32,
+    active_panel: PaneType,
     //terminal: Terminal,
     show_button_row: bool,
     show_embedded_terminal: bool,
@@ -1220,11 +1220,11 @@ impl App {
     }
 
     fn activate_left_pane(&mut self) {
-        self.active_panel = 1;
+        self.active_panel = PaneType::LeftPane;
     }
 
     fn activate_right_pane(&mut self) {
-        self.active_panel = 2;
+        self.active_panel = PaneType::RightPane;
     }
 
     fn operation(&mut self, operation: Operation) {
@@ -1257,7 +1257,7 @@ impl App {
     fn remove_window(&mut self, id: &window::Id) {
         if let Some(WindowKind::Desktop(entity)) = self.windows.remove(id) {
             // Remove the tab from the tab model
-            if self.active_panel == 1 {
+            if self.active_panel == PaneType::LeftPane {
                 self.tab_model1.remove(entity);
             } else {
                 self.tab_model2.remove(entity);
@@ -1267,7 +1267,7 @@ impl App {
 
     fn rescan_operation_selection(&mut self, op_sel: OperationSelection) -> Task<Message> {
         log::info!("rescan_operation_selection {:?}", op_sel);
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             let entity = self.tab_model1.active();
             if let Some(tab) = self.tab_model1.data::<Tab1>(entity) {
                 let Some(items) = tab.items_opt() else {
@@ -1403,7 +1403,7 @@ impl App {
     }
 
     fn rescan_trash(&mut self) -> Task<Message> {
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             let mut needs_reload = Vec::new();
             let entities: Vec<_> = self.tab_model1.iter().collect();
             for entity in entities {
@@ -1441,7 +1441,7 @@ impl App {
     }
 
     fn search_get(&self) -> Option<&str> {
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             let entity = self.tab_model1.active();
             if let Some(tab) = self.tab_model1.data::<Tab1>(entity) {
                 match &tab.location {
@@ -1466,7 +1466,7 @@ impl App {
 
     fn search_set_active(&mut self, term_opt: Option<String>) -> Task<Message> {
         let entity;
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             entity = self.tab_model1.active();
         } else {
             entity = self.tab_model2.active();
@@ -1480,7 +1480,7 @@ impl App {
         term_opt: Option<String>,
         selection_paths: Option<Vec<PathBuf>>,
     ) -> Task<Message> {
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             let mut title_location_opt = None;
             if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                 let location_opt = match term_opt {
@@ -1572,14 +1572,14 @@ impl App {
         let entity = match entity_opt {
             Some(entity) => entity,
             None => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     self.tab_model1.active()
                 } else {
                     self.tab_model2.active()
                 }
             }
         };
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             if let Some(tab) = self.tab_model1.data::<Tab1>(entity) {
                 for location in tab.selected_locations() {
                     if let Some(path) = location.path_opt() {
@@ -1602,7 +1602,7 @@ impl App {
     fn update_config(&mut self) -> Task<Message> {
         self.update_color_schemes();
         let commands: Vec<_>;
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             self.update_nav_model_left();
             // Tabs are collected first to placate the borrowck
             let tabs: Vec<_> = self.tab_model1.iter().collect();
@@ -1638,8 +1638,8 @@ impl App {
 
     fn update_desktop(&mut self) -> Task<Message> {
         let entities: Vec<_> = match self.active_panel {
-            1 => self.tab_model1.iter().collect(),
-            2 => self.tab_model2.iter().collect(),
+            PaneType::LeftPane => self.tab_model1.iter().collect(),
+            PaneType::RightPane => self.tab_model2.iter().collect(),
             _ => {
                 log::error!("unknown panel used!");
                 Vec::new()
@@ -1647,7 +1647,7 @@ impl App {
         };
         for entity in entities {
             let mut needs_reload = Vec::new();
-            if self.active_panel == 1 {
+            if self.active_panel == PaneType::LeftPane {
                 if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                     if let Location1::Desktop(path, output, _) = &tab.location {
                         needs_reload.push((
@@ -1855,7 +1855,7 @@ impl App {
 
     fn update_title(&mut self) -> Task<Message> {
         let window_title;
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             window_title = match self.tab_model1.text(self.tab_model1.active()) {
                 Some(tab_title) => format!("{tab_title} — {}", fl!("commander")),
                 None => fl!("commander"),
@@ -2219,7 +2219,7 @@ impl App {
         let entity = match entity_opt.to_owned() {
             Some(entity) => entity,
             None => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     self.tab_model1.active()
                 } else {
                     self.tab_model2.active()
@@ -2296,7 +2296,7 @@ impl App {
         let entity = match entity_opt.to_owned() {
             Some(entity) => entity,
             None => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     self.tab_model1.active()
                 } else {
                     self.tab_model2.active()
@@ -2568,6 +2568,7 @@ impl App {
                 tab_column = tab_column
                     .push(terminal_box.on_mouse_enter(move || Message::TermMouseEnter(id)));
             }
+    
             let content: Element<_> = tab_column.into();
 
             // Uncomment to debug layout:
@@ -2760,7 +2761,7 @@ impl Application for App {
             focus: None,
             term_event_tx_opt,
             terminal,
-            active_panel: 1,
+            active_panel: PaneType::LeftPane,
             show_button_row: flags.config.show_button_row,
             show_embedded_terminal: flags.config.show_embedded_terminal,
             show_second_panel: flags.config.show_second_panel,
@@ -2923,7 +2924,7 @@ impl Application for App {
     ) -> Option<Vec<widget::menu::Tree<cosmic::app::Message<Self::Message>>>> {
         let favorite_index_opt = self.nav_model.data::<FavoriteIndex>(entity);
         let location_opt = self.nav_model.data::<Location1>(entity);
-        if self.active_panel == 2 && location_opt.is_some() {
+        if self.active_panel == PaneType::RightPane && location_opt.is_some() {
             let location_opt2;
             if let Some(path) = location_opt.unwrap().path_opt() {
                 location_opt2 = Some(Location2::Path(path.to_owned()));
@@ -3046,7 +3047,7 @@ impl Application for App {
     fn on_nav_select(&mut self, entity: Entity) -> Task<Self::Message> {
         self.nav_model.activate(entity);
         if let Some(location) = self.nav_model.data::<Location1>(entity) {
-            if self.active_panel == 1 {
+            if self.active_panel == PaneType::LeftPane {
                 let message = Message::TabMessage(None, tab1::Message::Location(location.clone()));
                 return self.update(message);
             } else {
@@ -3108,7 +3109,7 @@ impl Application for App {
             return self.search_set_active(None);
         }
 
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             let entity = self.tab_model1.active();
             if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                 if tab.gallery {
@@ -3283,10 +3284,10 @@ impl Application for App {
                 // get the selected paths of the active panel
                 let tempactive;
                 let saveactive;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
-                    tempactive = 2;
-                    saveactive = 1;
+                    tempactive = PaneType::RightPane;
+                    saveactive = PaneType::LeftPane;
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         let location = tab.location.clone();
                         // create a new tab in the other panel
@@ -3299,8 +3300,8 @@ impl Application for App {
                     }
                 } else {
                     entity = self.tab_model2.active();
-                    tempactive = 1;
-                    saveactive = 2;
+                    tempactive = PaneType::LeftPane;
+                    saveactive = PaneType::RightPane;
                     if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
                         let location = tab.location.clone();
                         // create a new tab in the other panel
@@ -3516,7 +3517,7 @@ impl Application for App {
                 ]);
             }
             Message::EditLocation(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(
                         entity_opt,
                         tab1::Message::EditLocationEnable,
@@ -3529,7 +3530,7 @@ impl Application for App {
                 }
             }
             Message::EmptyTrash(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(entity_opt, tab1::Message::EmptyTrash));
                 } else {
                     return self.update(Message::TabMessageRight(
@@ -3539,7 +3540,7 @@ impl Application for App {
                 }
             }
             Message::ExecEntryAction(entity_opt, action) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(
                         entity_opt,
                         tab1::Message::ExecEntryAction(None, action),
@@ -3567,7 +3568,7 @@ impl Application for App {
             }
             Message::F2Rename => {
                 let entity;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
                 } else {
                     entity = self.tab_model2.active();
@@ -3576,7 +3577,7 @@ impl Application for App {
             }
             Message::F3View => {
                 let entity;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
                 } else {
                     entity = self.tab_model2.active();
@@ -3585,7 +3586,7 @@ impl Application for App {
             }
             Message::F4Edit => {
                 let entity;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
                 } else {
                     entity = self.tab_model2.active();
@@ -3594,7 +3595,7 @@ impl Application for App {
             }
             Message::F5Copy => {
                 let to;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let entity = self.tab_model1.active();
                     // get the selected paths of the active panel
                     let paths = self.selected_paths(Some(entity));
@@ -3626,7 +3627,7 @@ impl Application for App {
             }
             Message::F6Move => {
                 let to;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let entity = self.tab_model1.active();
                     // get the selected paths of the active panel
                     let paths = self.selected_paths(Some(entity));
@@ -3658,7 +3659,7 @@ impl Application for App {
             }
             Message::F7Mkdir => {
                 let entity;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
                 } else {
                     entity = self.tab_model2.active();
@@ -3667,7 +3668,7 @@ impl Application for App {
             }
             Message::F8Delete => {
                 let entity;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
                 } else {
                     entity = self.tab_model2.active();
@@ -3676,7 +3677,7 @@ impl Application for App {
             }
             Message::F9Terminal => {
                 let entity;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
                 } else {
                     entity = self.tab_model2.active();
@@ -3687,7 +3688,7 @@ impl Application for App {
                 return self.update(Message::WindowClose);
             }
             Message::GalleryToggle(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(
                         entity_opt,
                         tab1::Message::GalleryToggle,
@@ -3700,7 +3701,7 @@ impl Application for App {
                 }
             }
             Message::HistoryNext(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(entity_opt, tab1::Message::GoNext));
                 } else {
                     return self
@@ -3708,7 +3709,7 @@ impl Application for App {
                 }
             }
             Message::HistoryPrevious(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(entity_opt, tab1::Message::GoPrevious));
                 } else {
                     return self.update(Message::TabMessageRight(
@@ -3718,7 +3719,7 @@ impl Application for App {
                 }
             }
             Message::ItemDown(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(entity_opt, tab1::Message::ItemDown));
                 } else {
                     return self.update(Message::TabMessageRight(
@@ -3728,7 +3729,7 @@ impl Application for App {
                 }
             }
             Message::ItemLeft(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(entity_opt, tab1::Message::ItemLeft));
                 } else {
                     return self.update(Message::TabMessageRight(
@@ -3738,7 +3739,7 @@ impl Application for App {
                 }
             }
             Message::ItemRight(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(entity_opt, tab1::Message::ItemRight));
                 } else {
                     return self.update(Message::TabMessageRight(
@@ -3748,7 +3749,7 @@ impl Application for App {
                 }
             }
             Message::ItemUp(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(entity_opt, tab1::Message::ItemUp));
                 } else {
                     return self
@@ -3764,7 +3765,7 @@ impl Application for App {
                     }
                 } else {
                     let entity;
-                    if self.active_panel == 1 {
+                    if self.active_panel == PaneType::LeftPane {
                         entity = self.tab_model1.active();
                     } else {
                         entity = self.tab_model2.active();
@@ -3777,7 +3778,7 @@ impl Application for App {
                 }
             }
             Message::LocationUp(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(entity_opt, tab1::Message::LocationUp));
                 } else {
                     return self.update(Message::TabMessageRight(
@@ -3806,10 +3807,10 @@ impl Application for App {
                 // get the selected paths of the active panel
                 let tempactive;
                 let saveactive;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
-                    tempactive = 2;
-                    saveactive = 1;
+                    tempactive = PaneType::RightPane;
+                    saveactive = PaneType::LeftPane;
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         let location = tab.location.clone();
                         // create a new tab in the other panel
@@ -3824,8 +3825,8 @@ impl Application for App {
                     }
                 } else {
                     entity = self.tab_model2.active();
-                    tempactive = 1;
-                    saveactive = 2;
+                    tempactive = PaneType::LeftPane;
+                    saveactive = PaneType::RightPane;
                     if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
                         let location = tab.location.clone();
                         // create a new tab in the other panel
@@ -3851,7 +3852,7 @@ impl Application for App {
                 // Go back to home in any tabs that were unmounted
                 let mut commands = Vec::new();
                 {
-                    if self.active_panel == 1 {
+                    if self.active_panel == PaneType::LeftPane {
                         // Check for unmounted folders
                         let mut unmounted = Vec::new();
                         if let Some(old_items) = self.mounter_items.get(&mounter_key) {
@@ -4036,14 +4037,14 @@ impl Application for App {
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => {
-                        if self.active_panel == 1 {
+                        if self.active_panel == PaneType::LeftPane {
                             self.tab_model1.active()
                         } else {
                             self.tab_model2.active()
                         }
                     }
                 };
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         if let Some(path) = &tab.location.path_opt() {
                             self.dialog_pages.push_back(DialogPage::NewItem {
@@ -4074,7 +4075,7 @@ impl Application for App {
             Message::NotifyEvents(events) => {
                 log::debug!("{:?}", events);
 
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let mut needs_reload = Vec::new();
                     let entities: Vec<_> = self.tab_model1.iter().collect();
                     for entity in entities {
@@ -4205,7 +4206,7 @@ impl Application for App {
             Message::NotifyWatcher(mut watcher_wrapper) => match watcher_wrapper.watcher_opt.take()
             {
                 Some(watcher) => {
-                    if self.active_panel == 1 {
+                    if self.active_panel == PaneType::LeftPane {
                         self.watcher_opt_left = Some((watcher, HashSet::new()));
                         return self.update_watcher_left();
                     } else {
@@ -4249,7 +4250,7 @@ impl Application for App {
                         }
                     }
                 } else {
-                    if self.active_panel == 1 {
+                    if self.active_panel == PaneType::LeftPane {
                         return self
                             .update(Message::TabMessage(entity_opt, tab1::Message::Open(None)));
                     } else {
@@ -4266,14 +4267,14 @@ impl Application for App {
                     let entity = match entity_opt {
                         Some(entity) => entity,
                         None => {
-                            if self.active_panel == 1 {
+                            if self.active_panel == PaneType::LeftPane {
                                 self.tab_model1.active()
                             } else {
                                 self.tab_model2.active()
                             }
                         }
                     };
-                    if self.active_panel == 1 {
+                    if self.active_panel == PaneType::LeftPane {
                         if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                             if let Some(path) = &tab.location.path_opt() {
                                 if let Some(items) = tab.items_opt() {
@@ -4360,7 +4361,7 @@ impl Application for App {
                         Task::batch(self.selected_paths(entity_opt).into_iter().filter_map(
                             |path| {
                                 if path.is_dir() {
-                                    if self.active_panel == 1 {
+                                    if self.active_panel == PaneType::LeftPane {
                                         Some(self.open_tab(Location1::Path(path), false, None))
                                     } else {
                                         Some(self.open_tab_right(
@@ -4397,7 +4398,7 @@ impl Application for App {
                 return Task::batch(self.selected_paths(entity_opt).into_iter().filter_map(
                     |path| {
                         path.parent().map(Path::to_path_buf).map(|parent| {
-                            if self.active_panel == 1 {
+                            if self.active_panel == PaneType::LeftPane {
                                 self.open_tab(Location1::Path(parent), true, Some(vec![path]))
                             } else {
                                 self.open_tab_right(Location2::Path(parent), true, Some(vec![path]))
@@ -4437,14 +4438,14 @@ impl Application for App {
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => {
-                        if self.active_panel == 1 {
+                        if self.active_panel == PaneType::LeftPane {
                             self.tab_model1.active()
                         } else {
                             self.tab_model2.active()
                         }
                     }
                 };
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     if let Some(tab) = self.tab_model1.data::<Tab1>(entity) {
                         if let Some(items) = tab.items_opt() {
                             for item in items {
@@ -4540,8 +4541,8 @@ impl Application for App {
             Message::PaneClicked(pane) => {
                 if let Some(p) = self.panestates.get(pane) {
                     match p.id {
-                        PaneType::LeftPane => self.active_panel = 1,
-                        PaneType::RightPane => self.active_panel = 2,
+                        PaneType::LeftPane => self.active_panel = PaneType::LeftPane,
+                        PaneType::RightPane => self.active_panel = PaneType::RightPane,
                         _ => {}
                     }
                 }
@@ -4586,14 +4587,14 @@ impl Application for App {
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => {
-                        if self.active_panel == 1 {
+                        if self.active_panel == PaneType::LeftPane {
                             self.tab_model1.active()
                         } else {
                             self.tab_model2.active()
                         }
                     }
                 };
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         if let Some(path) = tab.location.path_opt() {
                             let to = path.clone();
@@ -4775,7 +4776,7 @@ impl Application for App {
                             }
 
                             let (id, command) = window::open(settings);
-                            if self.active_panel == 1 {
+                            if self.active_panel == PaneType::LeftPane {
                                 self.windows.insert(
                                     id,
                                     WindowKind::Preview1(
@@ -4823,14 +4824,14 @@ impl Application for App {
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => {
-                        if self.active_panel == 1 {
+                        if self.active_panel == PaneType::LeftPane {
                             self.tab_model1.active()
                         } else {
                             self.tab_model2.active()
                         }
                     }
                 };
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         if let Some(items) = tab.items_opt() {
                             let mut selected = Vec::new();
@@ -4933,14 +4934,14 @@ impl Application for App {
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => {
-                        if self.active_panel == 1 {
+                        if self.active_panel == PaneType::LeftPane {
                             self.tab_model1.active()
                         } else {
                             self.tab_model2.active()
                         }
                     }
                 };
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         if let Some(items) = tab.items_opt() {
                             for item in items.iter() {
@@ -4996,7 +4997,7 @@ impl Application for App {
                 return self.search_set_active(Some(input));
             }
             Message::SelectAll(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(entity_opt, tab1::Message::SelectAll));
                 } else {
                     return self.update(Message::TabMessageRight(
@@ -5006,7 +5007,7 @@ impl Application for App {
                 }
             }
             Message::SelectFirst(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self
                         .update(Message::TabMessage(entity_opt, tab1::Message::SelectFirst));
                 } else {
@@ -5017,7 +5018,7 @@ impl Application for App {
                 }
             }
             Message::SelectLast(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(entity_opt, tab1::Message::SelectLast));
                 } else {
                     return self.update(Message::TabMessageRight(
@@ -5082,14 +5083,18 @@ impl Application for App {
                 return self.update_config();
             }
             Message::SwapPanels => {
-                if self.active_panel == 1 {
-                    self.active_panel = 2;
+                if self.active_panel == PaneType::LeftPane {
+                    self.active_panel = PaneType::RightPane;
+                    let entity = self.tab_model2.active();
+                    return self.update(Message::TabActivate(entity));
                 } else {
-                    self.active_panel = 1;
+                    self.active_panel = PaneType::LeftPane;
+                    let entity = self.tab_model1.active();
+                    return self.update(Message::TabActivate(entity));
                 }
             }
             Message::TabActivate(entity) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     self.tab_model1.activate(entity);
 
                     if let Some(tab) = self.tab_model1.data::<Tab1>(entity) {
@@ -5105,29 +5110,29 @@ impl Application for App {
                 return self.update_title();
             }
             Message::TabActivateLeft => {
-                self.active_panel = 1;
+                self.active_panel = PaneType::LeftPane;
                 let entity = self.tab_model1.active();
 
                 return self.update(Message::TabActivate(entity));
             }
             Message::TabActivateRight => {
-                self.active_panel = 2;
+                self.active_panel = PaneType::RightPane;
                 let entity = self.tab_model2.active();
 
                 return self.update(Message::TabActivate(entity));
             }
             Message::TabActivateLeftEntity(entity) => {
-                self.active_panel = 1;
+                self.active_panel = PaneType::LeftPane;
 
                 return self.update(Message::TabActivate(entity));
             }
             Message::TabActivateRightEntity(entity) => {
-                self.active_panel = 2;
+                self.active_panel = PaneType::RightPane;
 
                 return self.update(Message::TabActivate(entity));
             }
             Message::TabNext => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let len = self.tab_model1.iter().count();
                     let pos = self
                         .tab_model1
@@ -5156,7 +5161,7 @@ impl Application for App {
                 }
             }
             Message::TabPrev => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let pos = self
                         .tab_model1
                         .position(self.tab_model1.active())
@@ -5195,7 +5200,7 @@ impl Application for App {
                 }
             }
             Message::TabRescan => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let entity = self.tab_model1.active();
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         let location = tab.location.clone();
@@ -5215,14 +5220,14 @@ impl Application for App {
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => {
-                        if self.active_panel == 1 {
+                        if self.active_panel == PaneType::LeftPane {
                             self.tab_model1.active()
                         } else {
                             self.tab_model2.active()
                         }
                     }
                 };
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     if let Some(position) = self.tab_model1.position(entity) {
                         let new_position = if position > 0 {
                             position - 1
@@ -5283,7 +5288,7 @@ impl Application for App {
                 }
             }
             Message::TabCloseLeft(entity_opt) => {
-                self.active_panel = 1;
+                self.active_panel = PaneType::LeftPane;
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => self.tab_model1.active(),
@@ -5316,7 +5321,7 @@ impl Application for App {
                 let _ = self.update(Message::StoreOpenPaths);
             }
             Message::TabCloseRight(entity_opt) => {
-                self.active_panel = 2;
+                self.active_panel = PaneType::RightPane;
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => self.tab_model2.active(),
@@ -5389,7 +5394,7 @@ impl Application for App {
                 }
             }
             Message::ToggleFoldersFirst => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let mut config = self.config.tab_left;
                     config.folders_first = !config.folders_first;
                     return self.update(Message::TabConfigLeft(config));
@@ -5400,7 +5405,7 @@ impl Application for App {
                 }
             }
             Message::ToggleShowHidden(entity_opt) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.update(Message::TabMessage(
                         entity_opt,
                         tab1::Message::ToggleShowHidden,
@@ -5442,7 +5447,7 @@ impl Application for App {
                 };
 
                 let active_panel = self.active_panel;
-                self.active_panel = 1;
+                self.active_panel = PaneType::LeftPane;
                 let mut commands = Vec::new();
                 for tab_command in tab_commands {
                     match tab_command {
@@ -5561,7 +5566,7 @@ impl Application for App {
                     _ => Vec::new(),
                 };
                 let active_panel = self.active_panel;
-                self.active_panel = 2;
+                self.active_panel = PaneType::RightPane;
                 let mut commands = Vec::new();
                 for tab_command in tab_commands {
                     match tab_command {
@@ -5662,7 +5667,7 @@ impl Application for App {
                 return Task::batch(commands);
             }
             Message::TabNew => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let entity = self.tab_model1.active();
                     let location = match self.tab_model1.data_mut::<Tab1>(entity) {
                         Some(tab) => tab.location.clone(),
@@ -5827,7 +5832,7 @@ impl Application for App {
                 // TODO: undo
             }
             Message::UndoTrash(id, recently_trashed) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     self.toasts_left.remove(id);
                 } else {
                     self.toasts_right.remove(id);
@@ -5835,7 +5840,7 @@ impl Application for App {
 
                 let mut paths = Vec::with_capacity(recently_trashed.len());
                 let icon_sizes;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     icon_sizes = self.config.tab_left.icon_sizes;
                 } else {
                     icon_sizes = self.config.tab_right.icon_sizes;
@@ -5877,7 +5882,7 @@ impl Application for App {
                 }
             }
             Message::WindowUnfocus => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let tab_entity = self.tab_model1.active();
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(tab_entity) {
                         tab.context_menu = None;
@@ -5905,7 +5910,7 @@ impl Application for App {
             },
             Message::ZoomDefault(_entity_opt) => {
                 let entity;
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
                     let mut config = self.config.tab_left;
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
@@ -5930,7 +5935,7 @@ impl Application for App {
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => {
-                        if self.active_panel == 1 {
+                        if self.active_panel == PaneType::LeftPane {
                             self.tab_model1.active()
                         } else {
                             self.tab_model2.active()
@@ -5951,7 +5956,7 @@ impl Application for App {
                         *size = step.try_into().unwrap();
                     }
                 };
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let mut config = self.config.tab_left;
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         match tab.config.view {
@@ -5974,7 +5979,7 @@ impl Application for App {
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => {
-                        if self.active_panel == 1 {
+                        if self.active_panel == PaneType::LeftPane {
                             self.tab_model1.active()
                         } else {
                             self.tab_model2.active()
@@ -5995,7 +6000,7 @@ impl Application for App {
                         *size = step.try_into().unwrap();
                     }
                 };
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let mut config = self.config.tab_left;
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         match tab.config.view {
@@ -6104,7 +6109,7 @@ impl Application for App {
                 }
             }
             Message::DndEnterTab(entity) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     self.tab_dnd_hover_left = Some((entity, Instant::now()));
                     return Task::perform(tokio::time::sleep(HOVER_DURATION1), move |_| {
                         cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
@@ -6193,7 +6198,7 @@ impl Application for App {
                 }
             }
             Message::DndHoverTabTimeout(entity) => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     if self
                         .tab_dnd_hover_left
                         .as_ref()
@@ -6224,7 +6229,7 @@ impl Application for App {
             // Tracks which nav bar item to show a context menu for.
             Message::NavBarContext(entity) => {
                 // Close location editing if enabled
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let tab_entity = self.tab_model1.active();
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(tab_entity) {
                         tab.edit_location = None;
@@ -6279,7 +6284,7 @@ impl Application for App {
                 NavMenuAction::OpenInNewTab(entity) => {
                     match self.nav_model.data::<Location1>(entity) {
                         Some(Location1::Path(ref path)) => {
-                            if self.active_panel == 1 {
+                            if self.active_panel == PaneType::LeftPane {
                                 return self.open_tab(Location1::Path(path.clone()), false, None);
                             } else {
                                 return self.open_tab_right(
@@ -6290,7 +6295,7 @@ impl Application for App {
                             }
                         }
                         Some(Location1::Trash) => {
-                            if self.active_panel == 1 {
+                            if self.active_panel == PaneType::LeftPane {
                                 return self.open_tab(Location1::Trash, false, None);
                             } else {
                                 return self.open_tab_right(Location2::Trash, false, None);
@@ -6353,7 +6358,7 @@ impl Application for App {
                 }
             },
             Message::Recents => {
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     return self.open_tab(Location1::Recents, false, None);
                 } else {
                     return self.open_tab_right(Location2::Recents, false, None);
@@ -6518,14 +6523,14 @@ impl Application for App {
                 let entity = match entity_opt.to_owned() {
                     Some(entity) => entity,
                     None => {
-                        if self.active_panel == 1 {
+                        if self.active_panel == PaneType::LeftPane {
                             self.tab_model1.active()
                         } else {
                             self.tab_model2.active()
                         }
                     }
                 };
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     if let Some(tab) = self.tab_model1.data::<Tab1>(entity) {
                         if let Some(items) = tab.items_opt() {
                             for item in items.iter() {
@@ -6586,7 +6591,7 @@ impl Application for App {
 
     fn dialog(&self) -> Option<Element<Message>> {
         //TODO: should gallery view just be a dialog?
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             let entity = self.tab_model1.active();
             if let Some(tab) = self.tab_model1.data::<Tab1>(entity) {
                 {
@@ -7389,7 +7394,7 @@ impl Application for App {
     }
 
     fn header_start(&self) -> Vec<Element<Self::Message>> {
-        if self.active_panel == 1 {
+        if self.active_panel == PaneType::LeftPane {
             vec![menu::menu_bar1(
                 self.tab_model1.active_data::<Tab1>(),
                 &self.config,
@@ -7480,7 +7485,7 @@ impl Application for App {
             Some(WindowKind::Desktop(entity)) => {
                 let mut tab_column = widget::column::with_capacity(3);
                 let entity = entity.to_owned();
-                if self.active_panel == 1 {
+                if self.active_panel == PaneType::LeftPane {
                     let tab_view = match self.tab_model1.data::<Tab1>(entity) {
                         Some(tab) => tab
                             .view(&self.key_binds)
@@ -7961,7 +7966,7 @@ impl Application for App {
                 let entity = match entity_opt {
                     Some(entity) => entity,
                     None => {
-                        if self.active_panel == 1 {
+                        if self.active_panel == PaneType::LeftPane {
                             self.tab_model1.active()
                         } else {
                             self.tab_model2.active()
@@ -7973,15 +7978,15 @@ impl Application for App {
             }
         }
         let entities: Vec<_> = match self.active_panel {
-            1 => self.tab_model1.iter().collect(),
-            2 => self.tab_model2.iter().collect(),
+            PaneType::LeftPane => self.tab_model1.iter().collect(),
+            PaneType::RightPane => self.tab_model2.iter().collect(),
             _ => {
                 log::error!("unknown panel used!");
                 Vec::new()
             }
         };
         for entity in entities {
-            if self.active_panel == 1 {
+            if self.active_panel == PaneType::LeftPane {
                 if let Some(tab) = self.tab_model1.data::<Tab1>(entity) {
                     subscriptions.push(
                         tab.subscription(selected_preview == Some(entity))
