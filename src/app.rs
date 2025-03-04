@@ -166,10 +166,8 @@ pub enum Action {
     TabNext,
     TabPrev,
     TabRescan,
-    TabViewGridLeft,
-    TabViewGridRight,
-    TabViewListLeft,
-    TabViewListRight,
+    TabViewGrid,
+    TabViewList,
     ToggleFoldersFirst,
     ToggleShowHidden,
     ToggleSortLeft(HeadingOptions1),
@@ -249,10 +247,8 @@ impl Action {
             Action::TabNext => Message::TabNext,
             Action::TabPrev => Message::TabPrev,
             Action::TabRescan => Message::TabRescan,
-            Action::TabViewGridLeft => Message::TabViewLeft(entity_opt, tab1::View::Grid),
-            Action::TabViewGridRight => Message::TabViewRight(entity_opt, tab2::View::Grid),
-            Action::TabViewListLeft => Message::TabViewLeft(entity_opt, tab1::View::List),
-            Action::TabViewListRight => Message::TabViewRight(entity_opt, tab2::View::List),
+            Action::TabViewGrid => Message::TabView(entity_opt, tab1::View::Grid),
+            Action::TabViewList => Message::TabView(entity_opt, tab1::View::List),
             Action::ToggleFoldersFirst => Message::ToggleFoldersFirst,
             Action::ToggleShowHidden => Message::ToggleShowHidden(entity_opt),
             Action::ToggleSortLeft(sort) => Message::ToggleSortLeft(entity_opt, *sort),
@@ -675,8 +671,7 @@ pub enum Message {
         Vec<tab2::Item>,
         Option<Vec<PathBuf>>,
     ),
-    TabViewLeft(Option<Entity>, tab1::View),
-    TabViewRight(Option<Entity>, tab2::View),
+    TabView(Option<Entity>, tab1::View),
     TermEvent(pane_grid::Pane, Entity, alacritty_terminal::event::Event),
     TermEventTx(mpsc::UnboundedSender<(pane_grid::Pane, Entity, alacritty_terminal::event::Event)>),
     TermMouseEnter(pane_grid::Pane),
@@ -5749,22 +5744,27 @@ impl Application for App {
                     }
                 }
             }
-            Message::TabViewLeft(_entity_opt, view) => {
-                let entity = self.tab_model1.active();
-                if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
-                    tab.config.view = view;
-                    let mut config = self.config.tab_left;
-                    config.view = view;
-                    return self.update(Message::TabConfigLeft(config));
-                }
-            }
-            Message::TabViewRight(_entity_opt, view) => {
-                let entity = self.tab_model1.active();
-                if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
-                    tab.config.view = view;
-                    let mut config = self.config.tab_right;
-                    config.view = view;
-                    return self.update(Message::TabConfigRight(config));
+            Message::TabView(_entity_opt, view) => {
+                if self.active_panel == PaneType::LeftPane {
+                    let entity = self.tab_model1.active();
+                    if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
+                        tab.config.view = view;
+                        let mut config = self.config.tab_left;
+                        config.view = view;
+                        return self.update(Message::TabConfigLeft(config));
+                    }
+                } else {
+                    let newview = match view {
+                        tab1::View::Grid => tab2::View::Grid,
+                        tab1::View::List => tab2::View::List,
+                    };
+                    let entity = self.tab_model2.active();
+                    if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
+                        tab.config.view = newview;
+                        let mut config = self.config.tab_right;
+                        config.view = newview;
+                        return self.update(Message::TabConfigRight(config));
+                    }                        
                 }
             }
             Message::TermEvent(_pane, _entity, event) => {

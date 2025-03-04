@@ -344,7 +344,7 @@ impl From<AppMessage> for Message {
             AppMessage::Preview(_entity_opt) => Message::Preview,
             AppMessage::SearchActivate => Message::SearchActivate,
             AppMessage::TabMessage(_entity_opt, tab_message) => Message::TabMessage(tab_message),
-            AppMessage::TabViewLeft(_entity_opt, view) => Message::TabViewLeft(view),
+            AppMessage::TabView(_entity_opt, view) => Message::TabViewLeft(view),
             AppMessage::ToggleFoldersFirst => Message::ToggleFoldersFirst,
             AppMessage::ZoomDefault(_entity_opt) => Message::ZoomDefault,
             AppMessage::ZoomIn(_entity_opt) => Message::ZoomIn,

@@ -12,9 +12,12 @@
 - tab scrollable jumps back to the start at every update
 - long lists of files crash the app with an u16 overflow
 - File operations do not execute
+- View options only apply to the left panel
+
 
 ## Open bugs
 
+- zoom options do not work at all
 - switching between the tabs does not work
 - Fkeys don't register sometimes.
 - drag and drop with Commander as destination does not work for the tabs
