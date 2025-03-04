@@ -4395,7 +4395,7 @@ impl Tab {
                 }
 
                 count += 1;
-                y += row_height;
+                y += row_height as u32;
                 children.push(button_row);
             }
 
