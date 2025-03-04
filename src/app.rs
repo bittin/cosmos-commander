@@ -157,8 +157,7 @@ pub enum Action {
     SelectFirst,
     SelectLast,
     SelectAll,
-    SetSortLeft(HeadingOptions1, bool),
-    SetSortRight(HeadingOptions2, bool),
+    SetSort(HeadingOptions1, bool),
     Settings,
     SwapPanels,
     TabClose,
@@ -238,8 +237,7 @@ impl Action {
             Action::SelectAll => Message::SelectAll(entity_opt),
             Action::SelectFirst => Message::SelectFirst(entity_opt),
             Action::SelectLast => Message::SelectLast(entity_opt),
-            Action::SetSortLeft(sort, dir) => Message::SetSortLeft(entity_opt, *sort, *dir),
-            Action::SetSortRight(sort, dir) => Message::SetSortRight(entity_opt, *sort, *dir),
+            Action::SetSort(sort, dir) => Message::SetSort(entity_opt, *sort, *dir),
             Action::Settings => Message::ToggleContextPage(ContextPage::Settings),
             Action::SwapPanels => Message::SwapPanels,
             Action::TabClose => Message::TabClose(entity_opt),
@@ -255,9 +253,9 @@ impl Action {
             Action::ToggleSortRight(sort) => Message::ToggleSortRight(entity_opt, *sort),
             Action::WindowClose => Message::WindowClose,
             Action::WindowNew => Message::WindowNew,
-            Action::ZoomDefault => Message::ZoomDefault(entity_opt),
-            Action::ZoomIn => Message::ZoomIn(entity_opt),
-            Action::ZoomOut => Message::ZoomOut(entity_opt),
+            Action::ZoomDefault => Message::ZoomDefault,
+            Action::ZoomIn => Message::ZoomIn,
+            Action::ZoomOut => Message::ZoomOut,
             Action::Recents => Message::Recents,
         }
     }
@@ -629,7 +627,7 @@ pub enum Message {
     SelectAll(Option<Entity>),
     SelectFirst(Option<Entity>),
     SelectLast(Option<Entity>),
-    SetSortLeft(Option<Entity>, HeadingOptions1, bool),
+    SetSort(Option<Entity>, HeadingOptions1, bool),
     SetSortRight(Option<Entity>, HeadingOptions2, bool),
     SetShowDetails(bool),
     ShowButtonRow(bool),
@@ -688,9 +686,9 @@ pub enum Message {
     WindowCloseRequested(window::Id),
     WindowNew,
     WindowUnfocus,
-    ZoomDefault(Option<Entity>),
-    ZoomIn(Option<Entity>),
-    ZoomOut(Option<Entity>),
+    ZoomDefault,
+    ZoomIn,
+    ZoomOut,
     DndHoverLocTimeoutLeft(Location1),
     DndHoverLocTimeoutRight(Location2),
     DndHoverTabTimeout(Entity),
@@ -5064,11 +5062,26 @@ impl Application for App {
                     ));
                 }
             }
-            Message::SetSortLeft(entity_opt, sort, dir) => {
-                return self.update(Message::TabMessage(
-                    entity_opt,
-                    tab1::Message::SetSort(sort, dir),
-                ));
+            Message::SetSort(_entity_opt, sort, dir) => {
+                if self.active_panel == PaneType::LeftPane {
+                    let entity = self.tab_model1.active();
+                    return self.update(Message::TabMessage(
+                        Some(entity),
+                        tab1::Message::SetSort(sort, dir),
+                    ));
+                } else {
+                    let entity = self.tab_model1.active();
+                    let newsort = match sort {
+                        tab1::HeadingOptions::Modified => tab2::HeadingOptions::Modified,
+                        tab1::HeadingOptions::Name => tab2::HeadingOptions::Name,
+                        tab1::HeadingOptions::TrashedOn => tab2::HeadingOptions::TrashedOn,
+                        tab1::HeadingOptions::Size => tab2::HeadingOptions::Size,
+                    };
+                    return self.update(Message::TabMessageRight(
+                        Some(entity),
+                        tab2::Message::SetSort(newsort, dir),
+                    ));
+                }
             }
             Message::SetSortRight(entity_opt, sort, dir) => {
                 return self.update(Message::TabMessageRight(
@@ -5950,7 +5963,7 @@ impl Application for App {
                     log::error!("failed to get current executable path: {}", err);
                 }
             },
-            Message::ZoomDefault(_entity_opt) => {
+            Message::ZoomDefault => {
                 let entity;
                 if self.active_panel == PaneType::LeftPane {
                     entity = self.tab_model1.active();
@@ -5973,18 +5986,7 @@ impl Application for App {
                 }
                 return self.update(Message::TabActivate(entity));
             }
-            Message::ZoomIn(entity_opt) => {
-                let entity = match entity_opt {
-                    Some(entity) => entity,
-                    None => {
-                        if self.active_panel == PaneType::LeftPane {
-                            self.tab_model1.active()
-                        } else {
-                            self.tab_model2.active()
-                        }
-                    }
-                };
-
+            Message::ZoomIn => {
                 let zoom_in = |size: &mut NonZeroU16, min: u16, max: u16| {
                     let mut step = min;
                     while step <= max {
@@ -5998,15 +6000,18 @@ impl Application for App {
                         *size = step.try_into().unwrap();
                     }
                 };
+                let entity;
                 if self.active_panel == PaneType::LeftPane {
+                    entity = self.tab_model1.active();
                     let mut config = self.config.tab_left;
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         match tab.config.view {
-                            tab1::View::List => zoom_in(&mut config.icon_sizes.list, 50, 500),
-                            tab1::View::Grid => zoom_in(&mut config.icon_sizes.grid, 50, 500),
+                            tab1::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
+                            tab1::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
                         }
                     }
                 } else {
+                    entity = self.tab_model2.active();
                     let mut config = self.config.tab_right;
                     if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
                         match tab.config.view {
@@ -6017,18 +6022,7 @@ impl Application for App {
                 }
                 return self.update(Message::TabActivate(entity));
             }
-            Message::ZoomOut(entity_opt) => {
-                let entity = match entity_opt {
-                    Some(entity) => entity,
-                    None => {
-                        if self.active_panel == PaneType::LeftPane {
-                            self.tab_model1.active()
-                        } else {
-                            self.tab_model2.active()
-                        }
-                    }
-                };
-
+            Message::ZoomOut => {
                 let zoom_out = |size: &mut NonZeroU16, min: u16, max: u16| {
                     let mut step = max;
                     while step >= min {
@@ -6042,7 +6036,9 @@ impl Application for App {
                         *size = step.try_into().unwrap();
                     }
                 };
+                let entity;
                 if self.active_panel == PaneType::LeftPane {
+                    entity = self.tab_model1.active();
                     let mut config = self.config.tab_left;
                     if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
                         match tab.config.view {
@@ -6051,6 +6047,7 @@ impl Application for App {
                         }
                     }
                 } else {
+                    entity = self.tab_model2.active();
                     let mut config = self.config.tab_right;
                     if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
                         match tab.config.view {
@@ -7436,19 +7433,11 @@ impl Application for App {
     }
 
     fn header_start(&self) -> Vec<Element<Self::Message>> {
-        if self.active_panel == PaneType::LeftPane {
-            vec![menu::menu_bar1(
-                self.tab_model1.active_data::<Tab1>(),
-                &self.config,
-                &self.key_binds,
-            )]
-        } else {
-            vec![menu::menu_bar2(
-                self.tab_model2.active_data::<Tab2>(),
-                &self.config,
-                &self.key_binds,
-            )]
-        }
+        vec![menu::menu_bar(
+            self.tab_model1.active_data::<Tab1>(),
+            &self.config,
+            &self.key_binds,
+        )]
     }
 
     fn header_end(&self) -> Vec<Element<Self::Message>> {

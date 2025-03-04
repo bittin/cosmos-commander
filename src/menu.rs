@@ -217,6 +217,13 @@ pub fn context_menu1<'a>(
                 children.push(menu_item(fl!("new-tab"), Action::TabNew).into());
                 children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
                 children.push(menu_item(fl!("move-tab"), Action::MoveTab).into());
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
+                children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
             } else {
                 //TODO: need better designs for menu with no selection
                 //TODO: have things like properties but they apply to the folder?
@@ -243,6 +250,13 @@ pub fn context_menu1<'a>(
                         menu_item(fl!("display-settings"), Action::CosmicSettingsDisplays).into(),
                     );
                 }
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
+                children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("new-tab"), Action::TabNew).into());
                 children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
@@ -516,6 +530,13 @@ pub fn context_menu2<'a>(
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("move-to-trash"), Action::MoveToTrash).into());
                 children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
+                children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
+                children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("new-tab"), Action::TabNew).into());
                 children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
                 children.push(menu_item(fl!("move-tab"), Action::MoveTab).into());
@@ -550,6 +571,13 @@ pub fn context_menu2<'a>(
                 children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
                 children.push(menu_item(fl!("move-tab"), Action::MoveTab).into());
 
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
+                children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
                 children.push(divider::horizontal::light().into());
                 // TODO: Nested menu
                 children.push(sort_item(fl!("sort-by-name"), HeadingOptions2::Name));
@@ -664,7 +692,7 @@ pub fn dialog_menu1(
             label,
             None,
             sort_name == sort && sort_direction == dir,
-            Action::SetSortLeft(sort, dir),
+            Action::SetSort(sort, dir),
         )
     };
     let in_trash = tab.location == Location1::Trash;
@@ -792,146 +820,7 @@ pub fn dialog_menu1(
     .into()
 }
 
-pub fn _dialog_menu2(
-    tab: &Tab2,
-    key_binds: &HashMap<KeyBind, Action>,
-    show_details: bool,
-) -> Element<'static, Message> {
-    let (sort_name, sort_direction, _) = tab.sort_options();
-    let sort_item = |label, sort, dir| {
-        menu::Item::CheckBox(
-            label,
-            None,
-            sort_name == sort && sort_direction == dir,
-            Action::SetSortRight(sort, dir),
-        )
-    };
-    let in_trash = tab.location == Location2::Trash;
-
-    let mut selected_gallery = 0;
-    if let Some(items) = tab.items_opt() {
-        for item in items.iter() {
-            if item.selected && item.can_gallery() {
-                selected_gallery += 1;
-            }
-        }
-    };
-
-    MenuBar::new(vec![
-        menu::Tree::with_children(
-            widget::button::icon(widget::icon::from_name(match tab.config.view {
-                tab2::View::Grid => "view-grid-symbolic",
-                tab2::View::List => "view-list-symbolic",
-            }))
-            // This prevents the button from being shown as insensitive
-            .on_press(Message::None)
-            .padding(8),
-            menu::items(
-                key_binds,
-                vec![
-                    menu::Item::CheckBox(
-                        fl!("grid-view"),
-                        None,
-                        matches!(tab.config.view, tab2::View::Grid),
-                        Action::TabViewGrid,
-                    ),
-                    menu::Item::CheckBox(
-                        fl!("list-view"),
-                        None,
-                        matches!(tab.config.view, tab2::View::List),
-                        Action::TabViewList,
-                    ),
-                ],
-            ),
-        ),
-        menu::Tree::with_children(
-            widget::button::icon(widget::icon::from_name(if sort_direction {
-                "view-sort-ascending-symbolic"
-            } else {
-                "view-sort-descending-symbolic"
-            }))
-            // This prevents the button from being shown as insensitive
-            .on_press(Message::None)
-            .padding(8),
-            menu::items(
-                key_binds,
-                vec![
-                    sort_item(fl!("sort-a-z"), tab2::HeadingOptions::Name, true),
-                    sort_item(fl!("sort-z-a"), tab2::HeadingOptions::Name, false),
-                    sort_item(
-                        fl!("sort-newest-first"),
-                        if in_trash {
-                            tab2::HeadingOptions::TrashedOn
-                        } else {
-                            tab2::HeadingOptions::Modified
-                        },
-                        false,
-                    ),
-                    sort_item(
-                        fl!("sort-oldest-first"),
-                        if in_trash {
-                            tab2::HeadingOptions::TrashedOn
-                        } else {
-                            tab2::HeadingOptions::Modified
-                        },
-                        true,
-                    ),
-                    sort_item(
-                        fl!("sort-smallest-to-largest"),
-                        tab2::HeadingOptions::Size,
-                        true,
-                    ),
-                    sort_item(
-                        fl!("sort-largest-to-smallest"),
-                        tab2::HeadingOptions::Size,
-                        false,
-                    ),
-                    //TODO: sort by type
-                ],
-            ),
-        ),
-        menu::Tree::with_children(
-            widget::button::icon(widget::icon::from_name("view-more-symbolic"))
-                // This prevents the button from being shown as insensitive
-                .on_press(Message::None)
-                .padding(8),
-            menu::items(
-                key_binds,
-                vec![
-                    menu::Item::Button(fl!("zoom-in"), None, Action::ZoomIn),
-                    menu::Item::Button(fl!("default-size"), None, Action::ZoomDefault),
-                    menu::Item::Button(fl!("zoom-out"), None, Action::ZoomOut),
-                    menu::Item::Divider,
-                    menu::Item::CheckBox(
-                        fl!("show-hidden-files"),
-                        None,
-                        tab.config.show_hidden,
-                        Action::ToggleShowHidden,
-                    ),
-                    menu::Item::CheckBox(
-                        fl!("list-directories-first"),
-                        None,
-                        tab.config.folders_first,
-                        Action::ToggleFoldersFirst,
-                    ),
-                    menu::Item::CheckBox(fl!("show-details"), None, show_details, Action::Preview),
-                    menu::Item::Divider,
-                    menu_button_optional(
-                        fl!("gallery-preview"),
-                        Action::Gallery,
-                        selected_gallery > 0,
-                    ),
-                ],
-            ),
-        ),
-    ])
-    .item_height(ItemHeight::Dynamic(40))
-    .item_width(ItemWidth::Uniform(240))
-    .spacing(theme::active().cosmic().spacing.space_xxxs.into())
-    .into()
-}
-
-pub fn menu_bar1<'a>(
+pub fn menu_bar<'a>(
     tab_opt: Option<&Tab1>,
     config: &Config,
     key_binds: &HashMap<KeyBind, Action>,
@@ -944,7 +833,7 @@ pub fn menu_bar1<'a>(
             sort_options.map_or(false, |(sort_name, sort_direction, _)| {
                 sort_name == sort && sort_direction == dir
             }),
-            Action::SetSortLeft(sort, dir),
+            Action::SetSort(sort, dir),
         )
     };
     let in_trash = tab_opt.map_or(false, |tab| tab.location == Location1::Trash);
@@ -1099,187 +988,6 @@ pub fn menu_bar1<'a>(
                     sort_item(
                         fl!("sort-largest-to-smallest"),
                         tab1::HeadingOptions::Size,
-                        false,
-                    ),
-                    //TODO: sort by type
-                ],
-            ),
-        ),
-    ])
-    .item_height(ItemHeight::Dynamic(40))
-    .item_width(ItemWidth::Uniform(360))
-    .spacing(theme::active().cosmic().spacing.space_xxxs.into())
-    .into()
-}
-
-pub fn menu_bar2<'a>(
-    tab_opt: Option<&Tab2>,
-    config: &Config,
-    key_binds: &HashMap<KeyBind, Action>,
-) -> Element<'a, Message> {
-    let sort_options = tab_opt.map(|tab| tab.sort_options());
-    let sort_item = |label, sort, dir| {
-        menu::Item::CheckBox(
-            label,
-            None,
-            sort_options.map_or(false, |(sort_name, sort_direction, _)| {
-                sort_name == sort && sort_direction == dir
-            }),
-            Action::SetSortRight(sort, dir),
-        )
-    };
-    let in_trash = tab_opt.map_or(false, |tab| tab.location == Location2::Trash);
-
-    let mut selected_dir = 0;
-    let mut selected = 0;
-    let mut selected_gallery = 0;
-    if let Some(items) = tab_opt.and_then(|tab| tab.items_opt()) {
-        for item in items.iter() {
-            if item.selected {
-                selected += 1;
-                if item.metadata.is_dir() {
-                    selected_dir += 1;
-                }
-                if item.can_gallery() {
-                    selected_gallery += 1;
-                }
-            }
-        }
-    };
-
-    MenuBar::new(vec![
-        menu::Tree::with_children(
-            menu::root(fl!("file")),
-            menu::items(
-                key_binds,
-                vec![
-                    menu::Item::Button(fl!("new-tab"), None, Action::TabNew),
-                    menu::Item::Button(fl!("copy-tab"), None, Action::TabNew),
-                    menu::Item::Button(fl!("move-tab"), None, Action::TabNew),
-                    menu::Item::Divider,
-                    menu::Item::Button(fl!("new-window"), None, Action::WindowNew),
-                    menu::Item::Button(fl!("new-folder"), None, Action::NewFolder),
-                    menu::Item::Button(fl!("new-file"), None, Action::NewFile),
-                    menu_button_optional(
-                        fl!("open"),
-                        Action::Open,
-                        (selected > 0 && selected_dir == 0) || (selected_dir == 1 && selected == 1),
-                    ),
-                    menu_button_optional(fl!("menu-open-with"), Action::OpenWith, selected == 1),
-                    menu::Item::Divider,
-                    menu_button_optional(fl!("rename"), Action::F2Rename, selected > 0),
-                    menu_button_optional(fl!("f5-copy"), Action::F5Copy, selected > 0),
-                    menu_button_optional(fl!("f6-move"), Action::F6Move, selected > 0),
-                    menu::Item::Divider,
-                    menu_button_optional(fl!("add-to-sidebar"), Action::AddToSidebar, selected > 0),
-                    menu::Item::Divider,
-                    menu_button_optional(fl!("move-to-trash"), Action::MoveToTrash, selected > 0),
-                    menu::Item::Divider,
-                    menu::Item::Button(fl!("close-tab"), None, Action::TabClose),
-                    menu::Item::Button(fl!("quit"), None, Action::WindowClose),
-                ],
-            ),
-        ),
-        menu::Tree::with_children(
-            menu::root(fl!("edit")),
-            menu::items(
-                key_binds,
-                vec![
-                    menu_button_optional(fl!("cut"), Action::Cut, selected > 0),
-                    menu_button_optional(fl!("copy"), Action::Copy, selected > 0),
-                    menu_button_optional(fl!("paste"), Action::Paste, selected > 0),
-                    menu::Item::Button(fl!("select-all"), None, Action::SelectAll),
-                    menu::Item::Divider,
-                    menu::Item::Button(fl!("history"), None, Action::EditHistory),
-                ],
-            ),
-        ),
-        menu::Tree::with_children(
-            menu::root(fl!("view")),
-            menu::items(
-                key_binds,
-                vec![
-                    menu::Item::Button(fl!("zoom-in"), None, Action::ZoomIn),
-                    menu::Item::Button(fl!("default-size"), None, Action::ZoomDefault),
-                    menu::Item::Button(fl!("zoom-out"), None, Action::ZoomOut),
-                    menu::Item::Divider,
-                    menu::Item::CheckBox(
-                        fl!("grid-view"),
-                        None,
-                        tab_opt.map_or(false, |tab| matches!(tab.config.view, tab2::View::Grid)),
-                        Action::TabViewGrid,
-                    ),
-                    menu::Item::CheckBox(
-                        fl!("list-view"),
-                        None,
-                        tab_opt.map_or(false, |tab| matches!(tab.config.view, tab2::View::List)),
-                        Action::TabViewList,
-                    ),
-                    menu::Item::Divider,
-                    menu::Item::CheckBox(
-                        fl!("show-hidden-files"),
-                        None,
-                        tab_opt.map_or(false, |tab| tab.config.show_hidden),
-                        Action::ToggleShowHidden,
-                    ),
-                    menu::Item::CheckBox(
-                        fl!("list-directories-first"),
-                        None,
-                        tab_opt.map_or(false, |tab| tab.config.folders_first),
-                        Action::ToggleFoldersFirst,
-                    ),
-                    menu::Item::CheckBox(
-                        fl!("show-details"),
-                        None,
-                        config.show_details,
-                        Action::Preview,
-                    ),
-                    menu::Item::Divider,
-                    menu_button_optional(
-                        fl!("gallery-preview"),
-                        Action::Gallery,
-                        selected_gallery > 0,
-                    ),
-                    menu::Item::Divider,
-                    menu::Item::Button(fl!("menu-settings"), None, Action::Settings),
-                    menu::Item::Divider,
-                    menu::Item::Button(fl!("menu-about"), None, Action::About),
-                ],
-            ),
-        ),
-        menu::Tree::with_children(
-            menu::root(fl!("sort")),
-            menu::items(
-                key_binds,
-                vec![
-                    sort_item(fl!("sort-a-z"), tab2::HeadingOptions::Name, true),
-                    sort_item(fl!("sort-z-a"), tab2::HeadingOptions::Name, false),
-                    sort_item(
-                        fl!("sort-newest-first"),
-                        if in_trash {
-                            tab2::HeadingOptions::TrashedOn
-                        } else {
-                            tab2::HeadingOptions::Modified
-                        },
-                        false,
-                    ),
-                    sort_item(
-                        fl!("sort-oldest-first"),
-                        if in_trash {
-                            tab2::HeadingOptions::TrashedOn
-                        } else {
-                            tab2::HeadingOptions::Modified
-                        },
-                        true,
-                    ),
-                    sort_item(
-                        fl!("sort-smallest-to-largest"),
-                        tab2::HeadingOptions::Size,
-                        true,
-                    ),
-                    sort_item(
-                        fl!("sort-largest-to-smallest"),
-                        tab2::HeadingOptions::Size,
                         false,
                     ),
                     //TODO: sort by type

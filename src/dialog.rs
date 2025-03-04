@@ -346,9 +346,9 @@ impl From<AppMessage> for Message {
             AppMessage::TabMessage(_entity_opt, tab_message) => Message::TabMessage(tab_message),
             AppMessage::TabView(_entity_opt, view) => Message::TabViewLeft(view),
             AppMessage::ToggleFoldersFirst => Message::ToggleFoldersFirst,
-            AppMessage::ZoomDefault(_entity_opt) => Message::ZoomDefault,
-            AppMessage::ZoomIn(_entity_opt) => Message::ZoomIn,
-            AppMessage::ZoomOut(_entity_opt) => Message::ZoomOut,
+            AppMessage::ZoomDefault => Message::ZoomDefault,
+            AppMessage::ZoomIn => Message::ZoomIn,
+            AppMessage::ZoomOut => Message::ZoomOut,
             AppMessage::NewItem(_entity_opt, true) => Message::NewFolder,
             unsupported => {
                 log::warn!("{unsupported:?} not supported in dialog mode");
