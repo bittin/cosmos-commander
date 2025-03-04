@@ -2562,7 +2562,7 @@ impl App {
                     .width(cosmic::iced::Length::Shrink)
                     .into(),
                 widget::horizontal_space().into(),
-                widget::button::text(fl!("f7-mkdir"))
+                widget::button::text(fl!("f8-delete"))
                     .on_press(Message::F8Delete)
                     .width(cosmic::iced::Length::Shrink)
                     .into(),
