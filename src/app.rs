@@ -1615,6 +1615,26 @@ impl App {
     fn update_config(&mut self) -> Task<Message> {
         self.update_color_schemes();
         let commands: Vec<_>;
+        if self.show_button_row != self.config.show_button_row 
+        || self.show_embedded_terminal != self.config.show_embedded_terminal
+        || self.show_second_panel != self.config.show_second_panel {
+            let (panestates, panes, splits) = pane_setup(
+                self.config.show_button_row,
+                self.config.show_embedded_terminal,
+                self.config.show_second_panel,
+            );
+            let panes_created = panestates.len();
+            self.panes = panes;
+            self.splits = splits;
+            self.panestates = panestates;
+            self.panes_created = panes_created;
+            self.show_button_row = self.config.show_button_row;
+            self.show_embedded_terminal = self.config.show_embedded_terminal;
+            self.show_second_panel = self.config.show_second_panel;
+            if !self.show_second_panel {
+                self.active_panel = PaneType::LeftPane;
+            }
+        }
         if self.active_panel == PaneType::LeftPane {
             self.update_nav_model_left();
             // Tabs are collected first to placate the borrowck
@@ -2741,10 +2761,7 @@ impl Application for App {
 
         let app_themes = vec![fl!("match-desktop"), fl!("dark"), fl!("light")];
 
-        let key_binds = key_binds(&match flags.mode {
-            Mode::App => tab1::Mode::App,
-            Mode::Desktop => tab1::Mode::Desktop,
-        });
+        let key_binds = key_binds(&tab1::Mode::App);
         let key_binds_terminal = key_binds_terminal();
 
         let window_id_opt = core.main_window_id();
