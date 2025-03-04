@@ -11,6 +11,7 @@
 - settings for optional panels do not de-/activate the optional panels
 - tab scrollable jumps back to the start at every update
 - long lists of files crash the app with an u16 overflow
+- File operations do not execute
 
 ## Open bugs
 

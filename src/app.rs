@@ -1246,7 +1246,7 @@ impl App {
         if operation.show_progress_notification() {
             self.progress_operations.insert(id);
         }
-        if self.config.queue_file_operations {
+/*        if self.config.queue_file_operations {
             match operation {
                 Operation::Copy { to, paths } => {
                     self.fileops.insert(id, (Operation::Copy { to, paths }, Controller::default()));
@@ -1259,10 +1259,10 @@ impl App {
                     .insert(id, (operation, Controller::default()));
                 }
             }
-        } else {
+        } else {*/
             self.pending_operations
                     .insert(id, (operation, Controller::default()));
-        }
+        //}
 
         
     }
@@ -3699,13 +3699,23 @@ impl Application for App {
                 return self.update(Message::NewItem(Some(entity), true));
             }
             Message::F8Delete => {
-                let entity;
                 if self.active_panel == PaneType::LeftPane {
-                    entity = self.tab_model1.active();
+                    let entity = self.tab_model1.active();
+                    // get the selected paths of the active panel
+                    let paths = self.selected_paths(Some(entity));
+                    if paths.len() == 0 {
+                        return Task::none();
+                    }
+                    self.operation(Operation::Delete { paths });
                 } else {
-                    entity = self.tab_model2.active();
+                    let entity = self.tab_model2.active();
+                    // get the selected paths of the active panel
+                    let paths = self.selected_paths(Some(entity));
+                    if paths.len() == 0 {
+                        return Task::none();
+                    }
+                    self.operation(Operation::Delete { paths });
                 }
-                return self.update(Message::MoveToTrash(Some(entity)));
             }
             Message::F9Terminal => {
                 let entity;
