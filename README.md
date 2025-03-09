@@ -7,7 +7,9 @@ Dual Panel File manager for the COSMIC desktop environment. Think of a less clut
 This project is based on [COSMIC files](https://github.com/pop-os/cosmic-files) and the Terminal on [COSMIC term](https://github.com/pop-os/cosmic-term).
 
 > [!NOTE]
-> The basic functionality is working. Two panels, copying or moving files or tabs between them. A Terminal to run commands. And all the features of COSMIC Files that it inherits. Good enough to close krusader and use commander instead. Further features will be coming as needed. Or as requested by users.
+> The basic functionality is working. Two panels, copying or moving files or tabs between them. A Terminal to run commands. And all the features of COSMIC Files that it inherits. Good enough to close krusader and use commander instead.
+>
+> Drag'nDrop is only working out of Commander panels into other programs. Dropping files into directories or paths into the terminal does not work. The hover and drop events do not register. I implemented every Event I could find, but none are triggered. The assumption is that PaneGrid is catching the events to detect Drag events of the panels. Until I have more input this problem is on hold.
 
 ## Install
 

@@ -712,6 +712,9 @@ pub enum Message {
     DndExitTab,
     DndExitTabLeft,
     DndExitTabRight,
+    DndHoveredWindow(PathBuf),
+    DndHoveredLeftWindow,
+    DndDropWindow(PathBuf),
     DndDropTabLeft(Entity, Option<ClipboardPaste>, DndAction),
     DndDropTabRight(Entity, Option<ClipboardPaste>, DndAction),
     DndDropNav(Entity, Option<ClipboardPaste>, DndAction),
@@ -6327,6 +6330,61 @@ impl Application for App {
             Message::DndExitTabRight => {
                 self.tab_dnd_hover_right = None;
             }
+            Message::DndHoveredWindow(_path) => {
+                if self.config.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                    // Terminal is active
+                    //let s = osstr_to_string(path.clone().into_os_string());
+                    //let _ = self.update(Message::PasteValueTerminal(s));
+                } else if self.active_panel == PaneType::LeftPane {
+                    let entity = self.tab_model1.active();
+                    self.tab_dnd_hover_left = Some((entity, Instant::now()));
+                    return Task::perform(tokio::time::sleep(HOVER_DURATION1), move |_| {
+                        cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
+                    });
+                } else {
+                    let entity = self.tab_model2.active();
+                    self.tab_dnd_hover_right = Some((entity, Instant::now()));
+                    return Task::perform(tokio::time::sleep(HOVER_DURATION2), move |_| {
+                        cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
+                    });
+                }
+            }
+            Message::DndHoveredLeftWindow => {
+                self.tab_dnd_hover_left = None;
+                self.tab_dnd_hover_right = None;
+                if self.config.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                    // Terminal is active
+                    //let s = osstr_to_string(path.clone().into_os_string());
+                    //let _ = self.update(Message::PasteValueTerminal(s));
+                } else if self.active_panel == PaneType::LeftPane {
+                    //let entity = self.tab_model1.active();
+                    //let v = vec![path];
+                    //let c = ClipboardPaste {kind: ClipboardKind::Copy, paths: v};
+                    //let _ = self.update(Message::DndDropTabLeft(entity, Some(c), DndAction::Copy));
+                } else {
+                    //let entity = self.tab_model1.active();
+                    //let v = vec![path];
+                    //let c = ClipboardPaste {kind: ClipboardKind::Copy, paths: v};
+                    //let _ = self.update(Message::DndDropTabRight(entity, Some(c), DndAction::Copy));
+                }
+            }
+            Message::DndDropWindow(path) => {
+                if self.config.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                    // Terminal is active
+                    let s = osstr_to_string(path.clone().into_os_string());
+                    let _ = self.update(Message::PasteValueTerminal(s));
+                } else if self.active_panel == PaneType::LeftPane {
+                    let entity = self.tab_model1.active();
+                    let v = vec![path];
+                    let c = ClipboardPaste {kind: ClipboardKind::Copy, paths: v};
+                    let _ = self.update(Message::DndDropTabLeft(entity, Some(c), DndAction::Copy));
+                } else {
+                    let entity = self.tab_model1.active();
+                    let v = vec![path];
+                    let c = ClipboardPaste {kind: ClipboardKind::Copy, paths: v};
+                    let _ = self.update(Message::DndDropTabRight(entity, Some(c), DndAction::Copy));
+                }
+            }
             Message::DndDropTabLeft(entity, data, action) => {
                 self.tab_dnd_hover_left = None;
                 if let Some((tab, data)) = self.tab_model1.data::<Tab1>(entity).zip(data) {
@@ -7761,6 +7819,9 @@ impl Application for App {
                     Some(Message::Size(size))
                 }
                 Event::Window(WindowEvent::Resized(s)) => Some(Message::Size(s)),
+                Event::Window(WindowEvent::FileHovered(f)) => Some(Message::DndHoveredWindow(f)),
+                Event::Window(WindowEvent::FilesHoveredLeft) => Some(Message::DndHoveredLeftWindow),
+                Event::Window(WindowEvent::FileDropped(f)) => Some(Message::DndDropWindow(f)),
                 #[cfg(feature = "wayland")]
                 Event::PlatformSpecific(event::PlatformSpecific::Wayland(wayland_event)) => {
                     match wayland_event {
