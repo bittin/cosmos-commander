@@ -107,6 +107,7 @@ pub enum Action {
     ClearScrollback,
     Compress,
     Copy,
+    CopyTerminal,
     CopyOrSigint,
     CopyPrimary,
     CopyTab,
@@ -150,6 +151,8 @@ pub enum Action {
     OpenWith,
     Paste,
     PastePrimary,
+    PasteTerminal,
+    PastePrimaryTerminal,
     Preview,
     Rename,
     RestoreFromTrash,
@@ -187,6 +190,7 @@ impl Action {
             Action::ClearScrollback => Message::ClearScrollback(entity_opt),
             Action::Compress => Message::Compress(entity_opt),
             Action::Copy => Message::Copy(entity_opt),
+            Action::CopyTerminal => Message::CopyTerminal(entity_opt),
             Action::CopyOrSigint => Message::CopyOrSigint(entity_opt),
             Action::CopyPrimary => Message::CopyPrimary(entity_opt),
             Action::CopyTab => Message::CopyTab(entity_opt),
@@ -230,6 +234,8 @@ impl Action {
             Action::OpenWith => Message::OpenWithDialog(entity_opt),
             Action::Paste => Message::Paste(entity_opt),
             Action::PastePrimary => Message::PastePrimary(entity_opt),
+            Action::PasteTerminal => Message::PasteTerminal(entity_opt),
+            Action::PastePrimaryTerminal => Message::PastePrimaryTerminal(entity_opt),
             Action::Preview => Message::Preview(entity_opt),
             Action::Rename => Message::Rename(entity_opt),
             Action::RestoreFromTrash => Message::RestoreFromTrash(entity_opt),
@@ -527,6 +533,7 @@ pub enum Message {
     Compress(Option<Entity>),
     Config(Config),
     Copy(Option<Entity>),
+    CopyTerminal(Option<Entity>),
     CopyOrSigint(Option<segmented_button::Entity>),
     CopyPrimary(Option<segmented_button::Entity>),
     CopyTab(Option<segmented_button::Entity>),
@@ -606,6 +613,8 @@ pub enum Message {
     //PaneCloseFocused,
     Paste(Option<Entity>),
     PastePrimary(Option<segmented_button::Entity>),
+    PasteTerminal(Option<Entity>),
+    PastePrimaryTerminal(Option<segmented_button::Entity>),
     PasteValueTerminal(String),
     PasteContents(PathBuf, ClipboardPaste),
     PendingCancel(u64),
@@ -670,8 +679,10 @@ pub enum Message {
         Option<Vec<PathBuf>>,
     ),
     TabView(Option<Entity>, tab1::View),
+    TermContextMenu(pane_grid::Pane, Option<Point>),
     TermEvent(pane_grid::Pane, Entity, alacritty_terminal::event::Event),
     TermEventTx(mpsc::UnboundedSender<(pane_grid::Pane, Entity, alacritty_terminal::event::Event)>),
+    TermMiddleClick(pane_grid::Pane, Option<segmented_button::Entity>),
     TermMouseEnter(pane_grid::Pane),
     TermNew,
     ToggleContextPage(ContextPage),
@@ -2436,7 +2447,7 @@ impl App {
         .into()
     }
 
-    fn view_pane_content(&self, id: pane_grid::Pane, pane: &Pane, _size: Size) -> Element<Message> {
+    fn view_pane_content(&self, _id: pane_grid::Pane, pane: &Pane, _size: Size) -> Element<Message> {
         let cosmic_theme::Spacing { space_xxs, space_s, .. } = theme::active().cosmic().spacing;
 
         if pane.id == PaneType::LeftPane || pane.id == PaneType::RightPane {
@@ -2583,16 +2594,17 @@ impl App {
             if let Some(terminal) = &self.terminal {
                 let terminal_box = crate::terminal_box::terminal_box(&terminal)
                     .id(terminal_id)
-                    //.on_context_menu(move |position_opt| {
-                    //    Message::TermContextMenu(id, position_opt)
-                    //})
-                    //.on_middle_click(move || Message::TermMiddleClick(pane, Some(entity_middle_click)))
+                    .on_context_menu(move |position_opt| {
+                        Message::TermContextMenu(self.panes[0], position_opt)
+                    })
+                    .on_middle_click(move || Message::TermMiddleClick(self.panes[0], None))
                     .opacity(1.0)
                     .padding(space_s)
                     .show_headerbar(false);
 
                 tab_column = tab_column
-                    .push(terminal_box.on_mouse_enter(move || Message::TermMouseEnter(id)));
+                    .push(terminal_box
+                        .on_mouse_enter(move || Message::TermMouseEnter(self.panes[0])));
             }
     
             let content: Element<_> = tab_column.into();
@@ -2603,6 +2615,69 @@ impl App {
         }
     }
 
+    fn pane_by_type(&self, panetype: PaneType) -> pane_grid::Pane {
+        if self.config.show_button_row && self.config.show_embedded_terminal && self.config.show_second_panel {
+            // full window
+            match panetype {
+                PaneType::LeftPane => return self.panes[3],
+                PaneType::RightPane => return self.panes[2],
+                PaneType::TerminalPane => return self.panes[0],
+                PaneType::ButtonPane => return self.panes[3],
+            }
+        } else if self.config.show_button_row && self.config.show_embedded_terminal && !self.config.show_second_panel {
+            // full window
+            match panetype {
+                PaneType::LeftPane => return self.panes[2],
+                PaneType::RightPane => return self.panes[2],
+                PaneType::TerminalPane => return self.panes[0],
+                PaneType::ButtonPane => return self.panes[2],
+            }
+        } else if !self.config.show_button_row && self.config.show_embedded_terminal && self.config.show_second_panel {
+            match panetype {
+                PaneType::LeftPane => return self.panes[2],
+                PaneType::RightPane => return self.panes[1],
+                PaneType::TerminalPane => return self.panes[0],
+                PaneType::ButtonPane => return self.panes[2],
+            }
+        } else if self.config.show_button_row && !self.config.show_embedded_terminal && self.config.show_second_panel {
+            match panetype {
+                PaneType::LeftPane => return self.panes[0],
+                PaneType::RightPane => return self.panes[2],
+                PaneType::TerminalPane => return self.panes[1],
+                PaneType::ButtonPane => return self.panes[0],
+            }
+        } else if !self.config.show_button_row && self.config.show_embedded_terminal && !self.config.show_second_panel {
+            match panetype {
+                PaneType::LeftPane => return self.panes[1],
+                PaneType::RightPane => return self.panes[1],
+                PaneType::TerminalPane => return self.panes[0],
+                PaneType::ButtonPane => return self.panes[1],
+            }
+        } else if self.config.show_button_row && !self.config.show_embedded_terminal && !self.config.show_second_panel {
+            match panetype {
+                PaneType::LeftPane => return self.panes[0],
+                PaneType::RightPane => return self.panes[0],
+                PaneType::TerminalPane => return self.panes[0],
+                PaneType::ButtonPane => return self.panes[0],
+            }
+        } else if !self.config.show_button_row && !self.config.show_embedded_terminal && self.config.show_second_panel {
+            match panetype {
+                PaneType::LeftPane => return self.panes[0],
+                PaneType::RightPane => return self.panes[1],
+                PaneType::TerminalPane => return self.panes[0],
+                PaneType::ButtonPane => return self.panes[0],
+            }
+         } else {
+            match panetype {
+                PaneType::LeftPane => return self.panes[0],
+                PaneType::RightPane => return self.panes[0],
+                PaneType::TerminalPane => return self.panes[0],
+                PaneType::ButtonPane => return self.panes[0],
+            }
+        }
+    
+    }
+        
     fn create_and_focus_new_terminal(
         &mut self,
         pane: pane_grid::Pane,
@@ -3274,6 +3349,17 @@ impl Application for App {
                 let paths = self.selected_paths(entity_opt);
                 let contents = ClipboardCopy::new(ClipboardKind::Copy, &paths);
                 return clipboard::write_data(contents);
+            }
+            Message::CopyTerminal(_entity_opt) => {
+                if let Some(terminal) = self.terminal.as_mut() {
+                    let terminal = terminal.lock().unwrap();
+                    let term = terminal.term.lock();
+                    if let Some(text) = term.selection_to_string() {
+                        return Task::batch([clipboard::write(text)]);
+                    }
+                } else {
+                    log::warn!("Failed to get terminal");
+                }
             }
             Message::CopyOrSigint(_entity_opt) => {
                 if let Some(terminalmutex) = self.terminal.as_mut() {
@@ -4665,6 +4751,18 @@ impl Application for App {
                     None => message::none(),
                 });
             }
+            Message::PasteTerminal(_entity_opt) => {
+                return clipboard::read_primary().map(move |value_opt| match value_opt {
+                    Some(value) => message::app(Message::PasteValueTerminal(value)),
+                    None => message::none(),
+                });
+            }
+            Message::PastePrimaryTerminal(_entity_opt) => {
+                return clipboard::read_primary().map(move |value_opt| match value_opt {
+                    Some(value) => message::app(Message::PasteValueTerminal(value)),
+                    None => message::none(),
+                });
+            }
             Message::PasteValueTerminal(value) => {
                 if let Some(terminalmutex) = &self.terminal.as_mut() {
                     if let Ok(terminal) = terminalmutex.lock() {
@@ -5133,11 +5231,18 @@ impl Application for App {
                 return self.update_config();
             }
             Message::SwapPanels => {
+                if !self.show_second_panel {
+                    return Task::none();
+                }
                 if self.active_panel == PaneType::LeftPane {
+                    let pane = self.pane_by_type(PaneType::RightPane);
+                    self.focus = Some(pane);
                     self.active_panel = PaneType::RightPane;
                     let entity = self.tab_model2.active();
                     return self.update(Message::TabActivate(entity));
                 } else {
+                    let pane = self.pane_by_type(PaneType::RightPane);
+                    self.focus = Some(pane);
                     self.active_panel = PaneType::LeftPane;
                     let entity = self.tab_model1.active();
                     return self.update(Message::TabActivate(entity));
@@ -5780,6 +5885,14 @@ impl Application for App {
                     }                        
                 }
             }
+            Message::TermContextMenu(pane, position_opt) => {
+                // Show the context menu on the correct pane / terminal
+                if let Some(terminal) = self.terminal.as_mut() {
+                    // Update context menu position
+                    let mut terminal = terminal.lock().unwrap();
+                    terminal.context_menu = position_opt;
+                }
+            }
             Message::TermEvent(_pane, _entity, event) => {
                 match event {
                     TermEvent::Bell => {
@@ -5860,6 +5973,14 @@ impl Application for App {
 
                 // Spawn first tab
                 return self.update(Message::TermNew);
+            }
+            Message::TermMiddleClick(pane, _entity_opt) => {
+                return Task::batch([
+                    clipboard::read_primary().map(move |value_opt| match value_opt {
+                        Some(value) => message::app(Message::PasteValueTerminal(value)),
+                        None => message::none(),
+                    }),
+                ]);
             }
             Message::TermMouseEnter(pane) => {
                 self.focus = Some(pane);

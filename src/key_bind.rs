@@ -127,11 +127,10 @@ pub fn key_binds_terminal() -> HashMap<KeyBind, Action> {
 
     // Standard key bindings
     bind!([Ctrl, Shift], Key::Character("A".into()), SelectAll);
-    bind!([Ctrl, Shift], Key::Character("C".into()), Copy);
+    bind!([Ctrl, Shift], Key::Character("C".into()), CopyTerminal);
     bind!([Ctrl], Key::Character("c".into()), CopyOrSigint);
-    bind!([Ctrl, Shift], Key::Character("V".into()), Paste);
-    bind!([Shift], Key::Named(Named::Insert), PastePrimary);
-    bind!([Ctrl], Key::Character(",".into()), Settings);
+    bind!([Ctrl, Shift], Key::Character("V".into()), PasteTerminal);
+    bind!([Shift], Key::Named(Named::Insert), PastePrimaryTerminal);
 
     // Ctrl+Tab and Ctrl+Shift+Tab cycle through tabs
     // Ctrl+Tab is not a special key for terminals and is free to use
