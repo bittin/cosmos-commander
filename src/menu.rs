@@ -217,13 +217,19 @@ pub fn context_menu1<'a>(
                 children.push(menu_item(fl!("new-tab"), Action::TabNew).into());
                 children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
                 children.push(menu_item(fl!("move-tab"), Action::MoveTab).into());
-                children.push(divider::horizontal::light().into());
-                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
-                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
-                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                // zoom does not work!
+                //children.push(divider::horizontal::light().into());
+                //children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                //children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                //children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
                 children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
+                children.push(divider::horizontal::light().into());
+                // TODO: Nested menu
+                children.push(sort_item(fl!("sort-by-name"), HeadingOptions1::Name));
+                children.push(sort_item(fl!("sort-by-modified"), HeadingOptions1::Modified));
+                children.push(sort_item(fl!("sort-by-size"), HeadingOptions1::Size));
             } else {
                 //TODO: need better designs for menu with no selection
                 //TODO: have things like properties but they apply to the folder?
@@ -250,10 +256,11 @@ pub fn context_menu1<'a>(
                         menu_item(fl!("display-settings"), Action::CosmicSettingsDisplays).into(),
                     );
                 }
-                children.push(divider::horizontal::light().into());
-                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
-                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
-                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                // zoom does not work!
+                //children.push(divider::horizontal::light().into());
+                //children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                //children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                //children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
                 children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
@@ -529,13 +536,19 @@ pub fn context_menu2<'a>(
                 }
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("move-to-trash"), Action::MoveToTrash).into());
-                children.push(divider::horizontal::light().into());
-                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
-                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
-                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                // zoom does not work!
+                //children.push(divider::horizontal::light().into());
+                //children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                //children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                //children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
                 children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
+                children.push(divider::horizontal::light().into());
+                // TODO: Nested menu
+                children.push(sort_item(fl!("sort-by-name"), HeadingOptions2::Name));
+                children.push(sort_item(fl!("sort-by-modified"), HeadingOptions2::Modified));
+                children.push(sort_item(fl!("sort-by-size"), HeadingOptions2::Size));
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("new-tab"), Action::TabNew).into());
                 children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
@@ -570,11 +583,11 @@ pub fn context_menu2<'a>(
                 children.push(menu_item(fl!("new-tab"), Action::TabNew).into());
                 children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
                 children.push(menu_item(fl!("move-tab"), Action::MoveTab).into());
-
-                children.push(divider::horizontal::light().into());
-                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
-                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
-                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                // zoom does not work!
+                //children.push(divider::horizontal::light().into());
+                //children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                //children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                //children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
                 children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
@@ -679,6 +692,65 @@ pub fn context_menu2<'a>(
         })
         .width(Length::Fixed(360.0))
         .into()
+}
+
+pub fn context_menu_term<'a>(
+    config: &Config,
+    key_binds: &HashMap<KeyBind, Action>,
+) -> Element<'a, Message> {
+    use cosmic::widget::menu::menu_button;
+    use cosmic::{
+        iced::{
+            widget::{column, horizontal_space},
+            Background, Length,
+        },
+        iced_core::Border,
+        widget::{
+            self, divider,
+        },
+    };
+        let find_key = |action: &Action| -> String {
+        for (key_bind, key_action) in key_binds {
+            if action == key_action {
+                return key_bind.to_string();
+            }
+        }
+        String::new()
+    };
+
+    let menu_item = |label, action| {
+        let key = find_key(&action);
+        menu_button(vec![
+            widget::text(label).into(),
+            horizontal_space().into(),
+            widget::text(key).into(),
+        ])
+        .on_press(Message::TermContextAction(action))
+    };
+
+    widget::container(column!(
+        menu_item(fl!("copy"), Action::CopyTerminal),
+        menu_item(fl!("paste"), Action::PasteTerminal),
+    ))
+    .padding(1)
+    //TODO: move style to libcosmic
+    .style(|theme| {
+        let cosmic = theme.cosmic();
+        let component = &cosmic.background.component;
+        widget::container::Style {
+            icon_color: Some(component.on.into()),
+            text_color: Some(component.on.into()),
+            background: Some(Background::Color(component.base.into())),
+            border: Border {
+                radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                width: 1.0,
+                color: component.divider.into(),
+            },
+            ..Default::default()
+        }
+    })
+    .width(Length::Fixed(240.0))
+    .into()
 }
 
 pub fn dialog_menu1(

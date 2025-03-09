@@ -679,6 +679,7 @@ pub enum Message {
         Option<Vec<PathBuf>>,
     ),
     TabView(Option<Entity>, tab1::View),
+    TermContextAction(Action),
     TermContextMenu(pane_grid::Pane, Option<Point>),
     TermEvent(pane_grid::Pane, Entity, alacritty_terminal::event::Event),
     TermEventTx(mpsc::UnboundedSender<(pane_grid::Pane, Entity, alacritty_terminal::event::Event)>),
@@ -2601,10 +2602,24 @@ impl App {
                     .opacity(1.0)
                     .padding(space_s)
                     .show_headerbar(false);
+                let context_menu = {
+                    let terminal = terminal.lock().unwrap();
+                    terminal.context_menu
+                };
 
-                tab_column = tab_column
-                    .push(terminal_box
-                        .on_mouse_enter(move || Message::TermMouseEnter(self.panes[0])));
+                if let Some(point) = context_menu {
+                    tab_column = tab_column.push(widget::popover(
+                        terminal_box
+                            .on_mouse_enter(move || Message::TermMouseEnter(self.panes[0]))
+                            .context_menu(point)
+                        )
+                        .popup(menu::context_menu_term(&self.config, &self.key_binds_terminal))
+                        .position(widget::popover::Position::Point(point)));
+                } else {    
+                    tab_column = tab_column
+                        .push(terminal_box
+                            .on_mouse_enter(move || Message::TermMouseEnter(self.panes[0])));
+                }
             }
     
             let content: Element<_> = tab_column.into();
@@ -5885,7 +5900,16 @@ impl Application for App {
                     }                        
                 }
             }
-            Message::TermContextMenu(pane, position_opt) => {
+            Message::TermContextAction(action) => {
+                if let Some(terminal) = self.terminal.as_mut() {
+                    // Update context menu position
+                    let mut terminal = terminal.lock().unwrap();
+                            terminal.context_menu = None;
+                }
+                // Run action's message
+                return self.update(action.message(None));
+            }
+            Message::TermContextMenu(_pane, position_opt) => {
                 // Show the context menu on the correct pane / terminal
                 if let Some(terminal) = self.terminal.as_mut() {
                     // Update context menu position

@@ -14,9 +14,12 @@
 - Fkeys don't register sometimes.
 - File operations do not execute
 - View options only apply to the left panel
+- Terminal does not accept middle click paste
+- Terminal does not have context menu copy paste
 
 ## Open bugs
 
+- Terminal does not accept key_binding Ctrl-C, Ctrl-V as copy paste
 - zoom options do not work at all
 - switching between the tabs does not work
 - drag and drop with Commander as destination does not work for the tabs
