@@ -492,8 +492,8 @@ pub struct IconSizes {
 impl Default for IconSizes {
     fn default() -> Self {
         Self {
-            list: 100.try_into().unwrap(),
-            grid: 100.try_into().unwrap(),
+            list: 60.try_into().unwrap(),
+            grid: 240.try_into().unwrap(),
         }
     }
 }
