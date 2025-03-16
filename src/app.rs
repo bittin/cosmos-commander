@@ -259,9 +259,9 @@ impl Action {
             Action::ToggleSortRight(sort) => Message::ToggleSortRight(entity_opt, *sort),
             Action::WindowClose => Message::WindowClose,
             Action::WindowNew => Message::WindowNew,
-            Action::ZoomDefault => Message::ZoomDefault,
-            Action::ZoomIn => Message::ZoomIn,
-            Action::ZoomOut => Message::ZoomOut,
+            Action::ZoomDefault => Message::ZoomDefault(entity_opt),
+            Action::ZoomIn => Message::ZoomIn(entity_opt),
+            Action::ZoomOut => Message::ZoomOut(entity_opt),
             Action::Recents => Message::Recents,
         }
     }
@@ -698,9 +698,9 @@ pub enum Message {
     WindowCloseRequested(window::Id),
     WindowNew,
     WindowUnfocus,
-    ZoomDefault,
-    ZoomIn,
-    ZoomOut,
+    ZoomDefault(Option<Entity>),
+    ZoomIn(Option<Entity>),
+    ZoomOut(Option<Entity>),
     DndHoverLocTimeoutLeft(Location1),
     DndHoverLocTimeoutRight(Location2),
     DndHoverTabTimeout(Entity),
@@ -912,7 +912,7 @@ pub struct App {
     overlap: HashMap<String, (window::Id, Rectangle)>,
     pending_operation_id: u64,
     pending_operations: BTreeMap<u64, (Operation, Controller)>,
-    fileops: BTreeMap<u64, (Operation, Controller)>,
+    _fileops: BTreeMap<u64, (Operation, Controller)>,
     progress_operations: BTreeSet<u64>,
     complete_operations: BTreeMap<u64, Operation>,
     failed_operations: BTreeMap<u64, (Operation, Controller, String)>,
@@ -2904,7 +2904,7 @@ impl Application for App {
             overlap: HashMap::new(),
             pending_operation_id: 0,
             pending_operations: BTreeMap::new(),
-            fileops: BTreeMap::new(),
+            _fileops: BTreeMap::new(),
             progress_operations: BTreeSet::new(),
             complete_operations: BTreeMap::new(),
             failed_operations: BTreeMap::new(),
@@ -6001,7 +6001,7 @@ impl Application for App {
                 // Spawn first tab
                 return self.update(Message::TermNew);
             }
-            Message::TermMiddleClick(pane, _entity_opt) => {
+            Message::TermMiddleClick(_pane, _entity_opt) => {
                 return Task::batch([
                     clipboard::read_primary().map(move |value_opt| match value_opt {
                         Some(value) => message::app(Message::PasteValueTerminal(value)),
@@ -6111,30 +6111,38 @@ impl Application for App {
                     log::error!("failed to get current executable path: {}", err);
                 }
             },
-            Message::ZoomDefault => {
-                let entity;
-                if self.active_panel == PaneType::LeftPane {
-                    entity = self.tab_model1.active();
-                    let mut config = self.config.tab_left;
-                    if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
-                        match tab.config.view {
-                            tab1::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
-                            tab1::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
+            Message::ZoomDefault(_entity_opt) => {
+                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                    if let Some(terminal) = self.terminal.as_mut() {
+                        if let Ok(mut term) = terminal.lock() {
+                            term.set_zoom_adj(0);
                         }
                     }
                 } else {
-                    entity = self.tab_model2.active();
-                    let mut config = self.config.tab_left;
-                    if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
-                        match tab.config.view {
-                            tab2::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
-                            tab2::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
+                    let entity;
+                    if self.active_panel == PaneType::LeftPane {
+                        entity = self.tab_model1.active();
+                        let mut config = self.config.tab_left;
+                        if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
+                            match tab.config.view {
+                                tab1::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
+                                tab1::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
+                            }
+                        }
+                    } else {
+                        entity = self.tab_model2.active();
+                        let mut config = self.config.tab_left;
+                        if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
+                            match tab.config.view {
+                                tab2::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
+                                tab2::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
+                            }
                         }
                     }
+                    return self.update(Message::TabActivate(entity));
                 }
-                return self.update(Message::TabActivate(entity));
             }
-            Message::ZoomIn => {
+            Message::ZoomIn(_entity_opt) => {
                 let zoom_in = |size: &mut NonZeroU16, min: u16, max: u16| {
                     let mut step = min;
                     while step <= max {
@@ -6148,29 +6156,38 @@ impl Application for App {
                         *size = step.try_into().unwrap();
                     }
                 };
-                let entity;
-                if self.active_panel == PaneType::LeftPane {
-                    entity = self.tab_model1.active();
-                    let mut config = self.config.tab_left;
-                    if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
-                        match tab.config.view {
-                            tab1::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
-                            tab1::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
+                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                    if let Some(terminal) = self.terminal.as_mut() {
+                        if let Ok(mut term) = terminal.lock() {
+                            let cur_val = term.zoom_adj();
+                            term.set_zoom_adj(cur_val.saturating_add(1));
                         }
                     }
                 } else {
-                    entity = self.tab_model2.active();
-                    let mut config = self.config.tab_right;
-                    if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
-                        match tab.config.view {
-                            tab2::View::List => zoom_in(&mut config.icon_sizes.list, 50, 500),
-                            tab2::View::Grid => zoom_in(&mut config.icon_sizes.grid, 50, 500),
+                    let entity;
+                    if self.active_panel == PaneType::LeftPane {
+                        entity = self.tab_model1.active();
+                        let mut config = self.config.tab_left;
+                        if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
+                            match tab.config.view {
+                                tab1::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
+                                tab1::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
+                            }
+                        }
+                    } else {
+                        entity = self.tab_model2.active();
+                        let mut config = self.config.tab_right;
+                        if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
+                            match tab.config.view {
+                                tab2::View::List => zoom_in(&mut config.icon_sizes.list, 50, 500),
+                                tab2::View::Grid => zoom_in(&mut config.icon_sizes.grid, 50, 500),
+                            }
                         }
                     }
+                    return self.update(Message::TabActivate(entity));
                 }
-                return self.update(Message::TabActivate(entity));
             }
-            Message::ZoomOut => {
+            Message::ZoomOut(_entity_opt) => {
                 let zoom_out = |size: &mut NonZeroU16, min: u16, max: u16| {
                     let mut step = max;
                     while step >= min {
@@ -6184,27 +6201,36 @@ impl Application for App {
                         *size = step.try_into().unwrap();
                     }
                 };
-                let entity;
-                if self.active_panel == PaneType::LeftPane {
-                    entity = self.tab_model1.active();
-                    let mut config = self.config.tab_left;
-                    if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
-                        match tab.config.view {
-                            tab1::View::List => zoom_out(&mut config.icon_sizes.list, 50, 500),
-                            tab1::View::Grid => zoom_out(&mut config.icon_sizes.grid, 50, 500),
+                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                    if let Some(terminal) = self.terminal.as_mut() {
+                        if let Ok(mut term) = terminal.lock() {
+                            let cur_val = term.zoom_adj();
+                            term.set_zoom_adj(cur_val.saturating_sub(1));
                         }
                     }
                 } else {
-                    entity = self.tab_model2.active();
-                    let mut config = self.config.tab_right;
-                    if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
-                        match tab.config.view {
-                            tab2::View::List => zoom_out(&mut config.icon_sizes.list, 50, 500),
-                            tab2::View::Grid => zoom_out(&mut config.icon_sizes.grid, 50, 500),
+                    let entity;
+                    if self.active_panel == PaneType::LeftPane {
+                        entity = self.tab_model1.active();
+                        let mut config = self.config.tab_left;
+                        if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
+                            match tab.config.view {
+                                tab1::View::List => zoom_out(&mut config.icon_sizes.list, 50, 500),
+                                tab1::View::Grid => zoom_out(&mut config.icon_sizes.grid, 50, 500),
+                            }
+                        }
+                    } else {
+                        entity = self.tab_model2.active();
+                        let mut config = self.config.tab_right;
+                        if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
+                            match tab.config.view {
+                                tab2::View::List => zoom_out(&mut config.icon_sizes.list, 50, 500),
+                                tab2::View::Grid => zoom_out(&mut config.icon_sizes.grid, 50, 500),
+                            }
                         }
                     }
+                    return self.update(Message::TabActivate(entity));
                 }
-                return self.update(Message::TabActivate(entity));
             }
             Message::DndEnterNav(entity) => {
                 if let Some(location) = self.nav_model.data::<Location1>(entity) {

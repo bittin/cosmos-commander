@@ -218,10 +218,10 @@ pub fn context_menu1<'a>(
                 children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
                 children.push(menu_item(fl!("move-tab"), Action::MoveTab).into());
                 // zoom does not work!
-                //children.push(divider::horizontal::light().into());
-                //children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
-                //children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
-                //children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
                 children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
@@ -257,10 +257,10 @@ pub fn context_menu1<'a>(
                     );
                 }
                 // zoom does not work!
-                //children.push(divider::horizontal::light().into());
-                //children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
-                //children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
-                //children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
                 children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
@@ -537,10 +537,10 @@ pub fn context_menu2<'a>(
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("move-to-trash"), Action::MoveToTrash).into());
                 // zoom does not work!
-                //children.push(divider::horizontal::light().into());
-                //children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
-                //children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
-                //children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
                 children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
@@ -584,10 +584,10 @@ pub fn context_menu2<'a>(
                 children.push(menu_item(fl!("copy-tab"), Action::CopyTab).into());
                 children.push(menu_item(fl!("move-tab"), Action::MoveTab).into());
                 // zoom does not work!
-                //children.push(divider::horizontal::light().into());
-                //children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
-                //children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
-                //children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
+                children.push(divider::horizontal::light().into());
+                children.push(menu_item(fl!("zoom-in"), Action::ZoomIn).into());
+                children.push(menu_item(fl!("default-size"), Action::ZoomDefault).into());                
+                children.push(menu_item(fl!("zoom-out"), Action::ZoomOut).into());
                 children.push(divider::horizontal::light().into());
                 children.push(menu_item(fl!("grid-view"), Action::TabViewGrid).into());
                 children.push(menu_item(fl!("list-view"), Action::TabViewList).into());
@@ -695,7 +695,7 @@ pub fn context_menu2<'a>(
 }
 
 pub fn context_menu_term<'a>(
-    config: &Config,
+    _config: &Config,
     key_binds: &HashMap<KeyBind, Action>,
 ) -> Element<'a, Message> {
     use cosmic::widget::menu::menu_button;
@@ -705,9 +705,7 @@ pub fn context_menu_term<'a>(
             Background, Length,
         },
         iced_core::Border,
-        widget::{
-            self, divider,
-        },
+        widget
     };
         let find_key = |action: &Action| -> String {
         for (key_bind, key_action) in key_binds {

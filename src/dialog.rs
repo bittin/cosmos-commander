@@ -332,9 +332,9 @@ enum Message {
     TabRescan(tab1::Location, Option<tab1::Item>, Vec<tab1::Item>),
     TabViewLeft(tab1::View),
     ToggleFoldersFirst,
-    ZoomDefault,
-    ZoomIn,
-    ZoomOut,
+    ZoomDefault(Option<cosmic::widget::segmented_button::Entity>),
+    ZoomIn(Option<cosmic::widget::segmented_button::Entity>),
+    ZoomOut(Option<cosmic::widget::segmented_button::Entity>),
 }
 
 impl From<AppMessage> for Message {
@@ -346,9 +346,9 @@ impl From<AppMessage> for Message {
             AppMessage::TabMessage(_entity_opt, tab_message) => Message::TabMessage(tab_message),
             AppMessage::TabView(_entity_opt, view) => Message::TabViewLeft(view),
             AppMessage::ToggleFoldersFirst => Message::ToggleFoldersFirst,
-            AppMessage::ZoomDefault => Message::ZoomDefault,
-            AppMessage::ZoomIn => Message::ZoomIn,
-            AppMessage::ZoomOut => Message::ZoomOut,
+            AppMessage::ZoomDefault(entity_opt) => Message::ZoomDefault(entity_opt),
+            AppMessage::ZoomIn(entity_opt) => Message::ZoomIn(entity_opt),
+            AppMessage::ZoomOut(entity_opt) => Message::ZoomOut(entity_opt),
             AppMessage::NewItem(_entity_opt, true) => Message::NewFolder,
             unsupported => {
                 log::warn!("{unsupported:?} not supported in dialog mode");
@@ -1521,11 +1521,11 @@ impl Application for App {
             Message::ToggleFoldersFirst => {
                 self.tab.config.folders_first = !self.tab.config.folders_first;
             }
-            Message::ZoomDefault => match self.tab.config.view {
+            Message::ZoomDefault(_entityopt) => match self.tab.config.view {
                 tab1::View::List => self.tab.config.icon_sizes.list = 100.try_into().unwrap(),
                 tab1::View::Grid => self.tab.config.icon_sizes.grid = 100.try_into().unwrap(),
             },
-            Message::ZoomIn => {
+            Message::ZoomIn(_entityopt) => {
                 let zoom_in = |size: &mut NonZeroU16, min: u16, max: u16| {
                     let mut step = min;
                     while step <= max {
@@ -1544,7 +1544,7 @@ impl Application for App {
                     tab1::View::Grid => zoom_in(&mut self.tab.config.icon_sizes.grid, 50, 500),
                 }
             }
-            Message::ZoomOut => {
+            Message::ZoomOut(_entityopt) => {
                 let zoom_out = |size: &mut NonZeroU16, min: u16, max: u16| {
                     let mut step = max;
                     while step >= min {
