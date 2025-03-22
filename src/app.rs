@@ -306,16 +306,17 @@ pub enum PreviewKind {
     Selected,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PaneType {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PaneType {
     ButtonPane,
     TerminalPane,
     LeftPane,
     RightPane,
 }
 
+/*
 #[derive(Clone, Copy, Debug)]
-struct Pane {
+pub struct Pane {
     id: PaneType,
     pub is_pinned: bool,
 }
@@ -328,153 +329,7 @@ impl Pane {
         }
     }
 }
-
-fn pane_setup(
-    show_button_row: bool,
-    show_embedded_terminal: bool,
-    show_second_panel: bool,
-) -> (
-    pane_grid::State<Pane>,
-    Vec<pane_grid::Pane>,
-    Vec<pane_grid::Split>,
-) {
-    let mut panes = Vec::new();
-    let mut splits = Vec::new();
-    let mut panestates;
-    let pane;
-    if show_button_row && show_embedded_terminal && show_second_panel {
-        // full window
-        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((t, s)) = panestates.split(
-            pane_grid::Axis::Horizontal,
-            pane,
-            Pane::new(PaneType::TerminalPane),
-        ) {
-            panestates.resize(s, 0.75);
-            splits.push(s);
-            if let Some((b, s)) = panestates.split(
-                pane_grid::Axis::Horizontal,
-                t,
-                Pane::new(PaneType::ButtonPane),
-            ) {
-                panestates.resize(s, 0.75);
-                panes.push(t);
-                splits.push(s);
-                panes.push(b);
-                if let Some((p, s)) = panestates.split(
-                    pane_grid::Axis::Vertical,
-                    pane,
-                    Pane::new(PaneType::RightPane),
-                ) {
-                    splits.push(s);
-                    panes.push(p);
-                    panes.push(pane);
-                }
-            }
-        }
-    } else if show_button_row && show_embedded_terminal && !show_second_panel {
-        // full window
-        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((t, s)) = panestates.split(
-            pane_grid::Axis::Horizontal,
-            pane,
-            Pane::new(PaneType::TerminalPane),
-        ) {
-            panestates.resize(s, 0.75);
-            splits.push(s);
-            if let Some((b, s)) = panestates.split(
-                pane_grid::Axis::Horizontal,
-                t,
-                Pane::new(PaneType::ButtonPane),
-            ) {
-                panestates.resize(s, 0.75);
-                panes.push(t);
-                splits.push(s);
-                panes.push(b);
-                panes.push(pane);
-            }
-        }
-    } else if !show_button_row && show_embedded_terminal && show_second_panel {
-        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((t, s)) = panestates.split(
-            pane_grid::Axis::Horizontal,
-            pane,
-            Pane::new(PaneType::TerminalPane),
-        ) {
-            panestates.resize(s, 0.75);
-            splits.push(s);
-            panes.push(t);
-            if let Some((p, s)) = panestates.split(
-                pane_grid::Axis::Vertical,
-                pane,
-                Pane::new(PaneType::RightPane),
-            ) {
-                splits.push(s);
-                panes.push(p);
-                panes.push(pane);
-            }
-        }
-    } else if show_button_row && !show_embedded_terminal && show_second_panel {
-        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((p, s)) = panestates.split(
-            pane_grid::Axis::Horizontal,
-            pane,
-            Pane::new(PaneType::ButtonPane),
-        ) {
-            panes.push(pane);
-            panestates.resize(s, 0.95);
-            splits.push(s);
-            panes.push(p);
-            if let Some((p, s)) = panestates.split(
-                pane_grid::Axis::Vertical,
-                pane,
-                Pane::new(PaneType::RightPane),
-            ) {
-                splits.push(s);
-                panes.push(p);
-            }
-        }
-    } else if !show_button_row && show_embedded_terminal && !show_second_panel {
-        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((t, s)) = panestates.split(
-            pane_grid::Axis::Horizontal,
-            pane,
-            Pane::new(PaneType::TerminalPane),
-        ) {
-            panes.push(t);
-            panes.push(pane);
-            panestates.resize(s, 0.75);
-            splits.push(s);
-        }
-    } else if show_button_row && !show_embedded_terminal && !show_second_panel {
-        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((p, s)) = panestates.split(
-            pane_grid::Axis::Horizontal,
-            pane,
-            Pane::new(PaneType::ButtonPane),
-        ) {
-            panes.push(pane);
-            panestates.resize(s, 0.95);
-            splits.push(s);
-            panes.push(p);
-        }
-    } else if !show_button_row && !show_embedded_terminal && show_second_panel {
-        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        if let Some((p, s)) = panestates.split(
-            pane_grid::Axis::Horizontal,
-            pane,
-            Pane::new(PaneType::RightPane),
-        ) {
-            panes.push(pane);
-            splits.push(s);
-            panes.push(p);
-        }
-    } else {
-        (panestates, pane) = pane_grid::State::new(Pane::new(PaneType::LeftPane));
-        panes.push(pane);
-    }
-    (panestates, panes, splits)
-}
+*/
 
 fn convert_location1_to_location2(location: &Location1) -> Location2 {
     let loc;
@@ -606,7 +461,7 @@ pub enum Message {
     PaneClicked(pane_grid::Pane),
     PaneDragged(pane_grid::DragEvent),
     PaneResized(pane_grid::ResizeEvent),
-    PaneTogglePin(pane_grid::Pane),
+    //PaneTogglePin(pane_grid::Pane),
     PaneMaximize(pane_grid::Pane),
     PaneRestore,
     //PaneClose(pane_grid::Pane),
@@ -869,6 +724,111 @@ fn osstr_to_string(osstr: std::ffi::OsString) -> String {
     String::new()
 }
 
+type TabModel = segmented_button::Model<segmented_button::SingleSelect>;
+
+pub struct CommanderPaneGrid {
+    pub panestates: pane_grid::State<TabModel>,
+    pub panes_created: usize,
+    pub focus: pane_grid::Pane,
+    pub panes: Vec<pane_grid::Pane>,
+    pub splits: Vec<pane_grid::Split>,
+    pub entity_by_pane: BTreeMap<pane_grid::Pane, segmented_button::Entity>,
+    pub entity_by_type: BTreeMap<PaneType, segmented_button::Entity>,
+    pub pane_by_entity: BTreeMap<segmented_button::Entity, pane_grid::Pane>,
+    pub pane_by_type: BTreeMap<PaneType, pane_grid::Pane>,
+    pub type_by_entity: BTreeMap<segmented_button::Entity, PaneType>,
+    pub type_by_pane: BTreeMap<pane_grid::Pane, PaneType>,
+    pub first_pane: pane_grid::Pane,
+}
+
+impl CommanderPaneGrid {
+    pub fn new(model: TabModel) -> Self {
+        let (panestates, pane) = pane_grid::State::new(model);
+        let mut terminal_ids = HashMap::new();
+        terminal_ids.insert(pane, cosmic::widget::Id::unique());
+        let mut v = Self {
+            panestates,
+            panes_created: 1,
+            focus: pane,
+            panes: vec![pane],
+            splits: Vec::new(),
+            entity_by_pane: BTreeMap::new(),
+            entity_by_type: BTreeMap::new(),
+            pane_by_entity: BTreeMap::new(),
+            pane_by_type: BTreeMap::new(),
+            type_by_entity: BTreeMap::new(),
+            type_by_pane: BTreeMap::new(),
+            first_pane: pane,
+        };
+        v.pane_by_type.insert(PaneType::LeftPane, pane);
+        v.type_by_pane.insert(pane, PaneType::LeftPane);
+        let entity;
+        if let Some(tab_model) = v.active() {
+            entity = tab_model.active();
+        } else {
+            return v;
+        }
+        v.entity_by_pane.insert(v.focus, entity);
+        v.entity_by_type.insert(PaneType::LeftPane, entity);
+        v.pane_by_entity.insert(entity, v.focus);
+        v.type_by_entity.insert(entity, PaneType::LeftPane);
+
+        v
+    }
+    pub fn active(&self) -> Option<&TabModel> {
+        self.panestates.get(self.focus)
+    }
+    pub fn active_mut(&mut self) -> Option<&mut TabModel> {
+        self.panestates.get_mut(self.focus)
+    }
+
+    pub fn insert(&mut self, pane_type: PaneType, pane: pane_grid::Pane, split: pane_grid::Split) {
+        if let Some(tab_model) = self.active_mut() {
+            let title = match pane_type {
+                PaneType::ButtonPane => "ButtonPane".to_string(),
+                PaneType::TerminalPane => "TerminalPane".to_string(),
+                PaneType::LeftPane => "LeftPane".to_string(),
+                PaneType::RightPane => "RightPane".to_string(),
+            };
+            let entity = tab_model
+                .insert()
+                .text(title)
+                //.closable()
+                //.activate()
+                .id();
+            self.panes.push(pane);
+            self.splits.push(split);
+            self.focus = pane;
+            self.pane_by_type.insert(pane_type, pane);
+            self.type_by_pane.insert(pane, pane_type);
+            self.entity_by_pane.insert(pane, entity);
+            self.entity_by_type.insert(pane_type, entity);
+            self.pane_by_entity.insert(entity, pane);
+            self.type_by_entity.insert(entity, pane_type);
+        }
+    }
+
+    pub fn set_focus(&mut self, pane_type: PaneType) {
+        if !self.pane_by_type.contains_key(&pane_type) {
+            return;
+        }
+        let pane = self.pane_by_type[&pane_type];
+        match pane_type {
+            PaneType::ButtonPane => {
+                let pane = self.pane_by_type[&PaneType::LeftPane];
+                self.focus = pane;
+            },
+            PaneType::TerminalPane => self.focus = pane,
+            PaneType::LeftPane => self.focus = pane,
+            PaneType::RightPane => self.focus = pane,
+        };
+    }
+
+    pub fn focussed(&self) -> PaneType {
+        return self.type_by_pane[&self.focus];
+    }
+}
+
 /// The [`App`] stores application-specific state.
 pub struct App {
     core: Core,
@@ -876,11 +836,7 @@ pub struct App {
     nav_model: segmented_button::SingleSelectModel,
     tab_model1: segmented_button::Model<segmented_button::SingleSelect>,
     tab_model2: segmented_button::Model<segmented_button::SingleSelect>,
-    panes: Vec<pane_grid::Pane>,
-    splits: Vec<pane_grid::Split>,
-    panestates: pane_grid::State<Pane>,
-    panes_created: usize,
-    focus: Option<pane_grid::Pane>,
+    pane_model: CommanderPaneGrid,
     term_event_tx_opt:
         Option<mpsc::UnboundedSender<(pane_grid::Pane, Entity, alacritty_terminal::event::Event)>>,
     terminal: Option<Mutex<crate::terminal::Terminal>>,
@@ -1620,22 +1576,130 @@ impl App {
         paths
     }
 
+    fn pane_setup(
+        &mut self,
+        show_button_row: bool,
+        show_embedded_terminal: bool,
+        show_second_panel: bool,
+    ) {
+        let pane= self.pane_model.first_pane;
+        if show_button_row && show_embedded_terminal && show_second_panel {
+            // full window
+            if let Some((t, st)) = self.pane_model.panestates.split(
+                pane_grid::Axis::Horizontal,
+                pane,
+                segmented_button::ModelBuilder::default().build(),
+            ) {
+                self.pane_model.panestates.resize(st, 0.75);
+                if let Some((b, sb)) = self.pane_model.panestates.split(
+                    pane_grid::Axis::Horizontal,
+                    t,
+                    segmented_button::ModelBuilder::default().build(),
+                ) {
+                    self.pane_model.panestates.resize(sb, 0.75);
+                    self.pane_model.insert(PaneType::TerminalPane, t, st);
+                    self.pane_model.insert(PaneType::ButtonPane, b, sb);
+                    if let Some((r, sr)) = self.pane_model.panestates.split(
+                        pane_grid::Axis::Vertical,
+                        pane,
+                        segmented_button::ModelBuilder::default().build(),
+                    ) {
+                        self.pane_model.insert(PaneType::RightPane, r, sr);
+                    }
+                }
+            }
+        } else if show_button_row && show_embedded_terminal && !show_second_panel {
+            // full window
+            if let Some((t, st)) = self.pane_model.panestates.split(
+                pane_grid::Axis::Horizontal,
+                pane,
+                segmented_button::ModelBuilder::default().build(),
+            ) {
+                self.pane_model.panestates.resize(st, 0.75);
+                if let Some((b, sb)) = self.pane_model.panestates.split(
+                    pane_grid::Axis::Horizontal,
+                    t,
+                    segmented_button::ModelBuilder::default().build(),
+                ) {
+                    self.pane_model.panestates.resize(sb, 0.75);
+                    self.pane_model.insert(PaneType::TerminalPane, t, st);
+                    self.pane_model.insert(PaneType::ButtonPane, b, sb);
+                }
+            }
+        } else if !show_button_row && show_embedded_terminal && show_second_panel {
+            if let Some((t, st)) = self.pane_model.panestates.split(
+                pane_grid::Axis::Horizontal,
+                pane,
+                segmented_button::ModelBuilder::default().build(),
+            ) {
+                self.pane_model.panestates.resize(st, 0.75);
+                self.pane_model.insert(PaneType::TerminalPane, t, st);
+                if let Some((r, sr)) = self.pane_model.panestates.split(
+                    pane_grid::Axis::Vertical,
+                    pane,
+                    segmented_button::ModelBuilder::default().build(),
+                ) {
+                    self.pane_model.insert(PaneType::RightPane, r, sr);
+                }
+            }
+        } else if show_button_row && !show_embedded_terminal && show_second_panel {
+            if let Some((b, sb)) = self.pane_model.panestates.split(
+                pane_grid::Axis::Horizontal,
+                pane,
+                segmented_button::ModelBuilder::default().build(),
+            ) {
+                self.pane_model.panestates.resize(sb, 0.95);
+                self.pane_model.insert(PaneType::ButtonPane, b, sb);
+                if let Some((r, sr)) = self.pane_model.panestates.split(
+                    pane_grid::Axis::Vertical,
+                    pane,
+                    segmented_button::ModelBuilder::default().build(),
+                ) {
+                    self.pane_model.insert(PaneType::RightPane, r, sr);
+                }
+            }
+        } else if !show_button_row && show_embedded_terminal && !show_second_panel {
+            if let Some((t, st)) = self.pane_model.panestates.split(
+                pane_grid::Axis::Horizontal,
+                pane,
+                segmented_button::ModelBuilder::default().build(),
+            ) {
+                self.pane_model.panestates.resize(st, 0.85);
+                self.pane_model.insert(PaneType::TerminalPane, t, st);
+            }
+        } else if show_button_row && !show_embedded_terminal && !show_second_panel {
+            if let Some((b, sb)) = self.pane_model.panestates.split(
+                pane_grid::Axis::Horizontal,
+                pane,
+                segmented_button::ModelBuilder::default().build(),
+            ) {
+                self.pane_model.panestates.resize(sb, 0.95);
+                self.pane_model.insert(PaneType::ButtonPane, b, sb);
+            }
+        } else if !show_button_row && !show_embedded_terminal && show_second_panel {
+            if let Some((r, sr)) = self.pane_model.panestates.split(
+                pane_grid::Axis::Horizontal,
+                pane,
+                segmented_button::ModelBuilder::default().build(),
+            ) {
+                self.pane_model.insert(PaneType::RightPane, r, sr);
+            }
+        } else {
+            //
+        }
+    }
+
     fn update_config(&mut self) -> Task<Message> {
         self.update_color_schemes();
         let commands: Vec<_>;
         if self.show_button_row != self.config.show_button_row 
         || self.show_embedded_terminal != self.config.show_embedded_terminal
         || self.show_second_panel != self.config.show_second_panel {
-            let (panestates, panes, splits) = pane_setup(
+            self.pane_setup(
                 self.config.show_button_row,
                 self.config.show_embedded_terminal,
                 self.config.show_second_panel,
             );
-            let panes_created = panestates.len();
-            self.panes = panes;
-            self.splits = splits;
-            self.panestates = panestates;
-            self.panes_created = panes_created;
             self.show_button_row = self.config.show_button_row;
             self.show_embedded_terminal = self.config.show_embedded_terminal;
             self.show_second_panel = self.config.show_second_panel;
@@ -2451,10 +2515,10 @@ impl App {
         .into()
     }
 
-    fn view_pane_content(&self, _id: pane_grid::Pane, pane: &Pane, _size: Size) -> Element<Message> {
+    fn view_pane_content(&self, pane: pane_grid::Pane, _tab_model: &TabModel, _size: Size) -> Element<Message> {
         let cosmic_theme::Spacing { space_xxs, space_s, .. } = theme::active().cosmic().spacing;
-
-        if pane.id == PaneType::LeftPane || pane.id == PaneType::RightPane {
+        let pane_type = self.pane_model.type_by_pane[&pane];
+        if pane_type == PaneType::LeftPane || pane_type == PaneType::RightPane {
             let mut tab_column = widget::column::with_capacity(4);
             if self.core.is_condensed() {
                 if let Some(term) = self.search_get() {
@@ -2471,7 +2535,7 @@ impl App {
                 }
             }
             //if self.tab_model1.iter().count() > 1 && self.tab_model2.iter().count() > 1 {
-            if pane.id == PaneType::LeftPane {
+            if pane_type == PaneType::LeftPane {
                 tab_column = tab_column.push(
                     widget::container(
                         widget::tab_bar::horizontal(&self.tab_model1)
@@ -2502,7 +2566,7 @@ impl App {
                     &self.toasts_left,
                     widget::horizontal_space(),
                 ));
-            } else if pane.id == PaneType::RightPane {
+            } else if pane_type== PaneType::RightPane {
                 tab_column = tab_column.push(
                     widget::container(
                         widget::tab_bar::horizontal(&self.tab_model2)
@@ -2538,7 +2602,7 @@ impl App {
             // Uncomment to debug layout:
             //content.explain(cosmic::iced::Color::WHITE)
             return content;
-        } else if pane.id == PaneType::ButtonPane {
+        } else if pane_type == PaneType::ButtonPane {
             let tab_column = widget::row::with_children(vec![
                 widget::button::text(fl!("f2-rename"))
                     .on_press(Message::F2Rename)
@@ -2595,13 +2659,14 @@ impl App {
             // Terminal
             let mut tab_column = widget::column::with_capacity(1);
             let terminal_id = widget::Id::unique();
+            let terminal_pane = self.pane_by_type(PaneType::TerminalPane);
             if let Some(terminal) = &self.terminal {
                 let terminal_box = crate::terminal_box::terminal_box(&terminal)
                     .id(terminal_id)
                     .on_context_menu(move |position_opt| {
-                        Message::TermContextMenu(self.panes[0], position_opt)
+                        Message::TermContextMenu(terminal_pane, position_opt)
                     })
-                    .on_middle_click(move || Message::TermMiddleClick(self.panes[0], None))
+                    .on_middle_click(move || Message::TermMiddleClick(terminal_pane, None))
                     .opacity(1.0)
                     .padding(space_s)
                     .show_headerbar(false);
@@ -2613,7 +2678,7 @@ impl App {
                 if let Some(point) = context_menu {
                     tab_column = tab_column.push(widget::popover(
                         terminal_box
-                            .on_mouse_enter(move || Message::TermMouseEnter(self.panes[0]))
+                            .on_mouse_enter(move || Message::TermMouseEnter(terminal_pane))
                             .context_menu(point)
                         )
                         .popup(menu::context_menu_term(&self.config, &self.key_binds_terminal))
@@ -2621,7 +2686,7 @@ impl App {
                 } else {    
                     tab_column = tab_column
                         .push(terminal_box
-                            .on_mouse_enter(move || Message::TermMouseEnter(self.panes[0])));
+                            .on_mouse_enter(move || Message::TermMouseEnter(terminal_pane)));
                 }
             }
     
@@ -2637,60 +2702,60 @@ impl App {
         if self.config.show_button_row && self.config.show_embedded_terminal && self.config.show_second_panel {
             // full window
             match panetype {
-                PaneType::LeftPane => return self.panes[3],
-                PaneType::RightPane => return self.panes[2],
-                PaneType::TerminalPane => return self.panes[0],
-                PaneType::ButtonPane => return self.panes[3],
+                PaneType::LeftPane => return self.pane_model.panes[3],
+                PaneType::RightPane => return self.pane_model.panes[2],
+                PaneType::TerminalPane => return self.pane_model.panes[0],
+                PaneType::ButtonPane => return self.pane_model.panes[3],
             }
         } else if self.config.show_button_row && self.config.show_embedded_terminal && !self.config.show_second_panel {
             // full window
             match panetype {
-                PaneType::LeftPane => return self.panes[2],
-                PaneType::RightPane => return self.panes[2],
-                PaneType::TerminalPane => return self.panes[0],
-                PaneType::ButtonPane => return self.panes[2],
+                PaneType::LeftPane => return self.pane_model.panes[2],
+                PaneType::RightPane => return self.pane_model.panes[2],
+                PaneType::TerminalPane => return self.pane_model.panes[0],
+                PaneType::ButtonPane => return self.pane_model.panes[2],
             }
         } else if !self.config.show_button_row && self.config.show_embedded_terminal && self.config.show_second_panel {
             match panetype {
-                PaneType::LeftPane => return self.panes[2],
-                PaneType::RightPane => return self.panes[1],
-                PaneType::TerminalPane => return self.panes[0],
-                PaneType::ButtonPane => return self.panes[2],
+                PaneType::LeftPane => return self.pane_model.panes[2],
+                PaneType::RightPane => return self.pane_model.panes[1],
+                PaneType::TerminalPane => return self.pane_model.panes[0],
+                PaneType::ButtonPane => return self.pane_model.panes[2],
             }
         } else if self.config.show_button_row && !self.config.show_embedded_terminal && self.config.show_second_panel {
             match panetype {
-                PaneType::LeftPane => return self.panes[0],
-                PaneType::RightPane => return self.panes[2],
-                PaneType::TerminalPane => return self.panes[1],
-                PaneType::ButtonPane => return self.panes[0],
+                PaneType::LeftPane => return self.pane_model.panes[0],
+                PaneType::RightPane => return self.pane_model.panes[2],
+                PaneType::TerminalPane => return self.pane_model.panes[1],
+                PaneType::ButtonPane => return self.pane_model.panes[0],
             }
         } else if !self.config.show_button_row && self.config.show_embedded_terminal && !self.config.show_second_panel {
             match panetype {
-                PaneType::LeftPane => return self.panes[1],
-                PaneType::RightPane => return self.panes[1],
-                PaneType::TerminalPane => return self.panes[0],
-                PaneType::ButtonPane => return self.panes[1],
+                PaneType::LeftPane => return self.pane_model.panes[1],
+                PaneType::RightPane => return self.pane_model.panes[1],
+                PaneType::TerminalPane => return self.pane_model.panes[0],
+                PaneType::ButtonPane => return self.pane_model.panes[1],
             }
         } else if self.config.show_button_row && !self.config.show_embedded_terminal && !self.config.show_second_panel {
             match panetype {
-                PaneType::LeftPane => return self.panes[0],
-                PaneType::RightPane => return self.panes[0],
-                PaneType::TerminalPane => return self.panes[0],
-                PaneType::ButtonPane => return self.panes[0],
+                PaneType::LeftPane => return self.pane_model.panes[0],
+                PaneType::RightPane => return self.pane_model.panes[0],
+                PaneType::TerminalPane => return self.pane_model.panes[0],
+                PaneType::ButtonPane => return self.pane_model.panes[0],
             }
         } else if !self.config.show_button_row && !self.config.show_embedded_terminal && self.config.show_second_panel {
             match panetype {
-                PaneType::LeftPane => return self.panes[0],
-                PaneType::RightPane => return self.panes[1],
-                PaneType::TerminalPane => return self.panes[0],
-                PaneType::ButtonPane => return self.panes[0],
+                PaneType::LeftPane => return self.pane_model.panes[0],
+                PaneType::RightPane => return self.pane_model.panes[1],
+                PaneType::TerminalPane => return self.pane_model.panes[0],
+                PaneType::ButtonPane => return self.pane_model.panes[0],
             }
          } else {
             match panetype {
-                PaneType::LeftPane => return self.panes[0],
-                PaneType::RightPane => return self.panes[0],
-                PaneType::TerminalPane => return self.panes[0],
-                PaneType::ButtonPane => return self.panes[0],
+                PaneType::LeftPane => return self.pane_model.panes[0],
+                PaneType::RightPane => return self.pane_model.panes[0],
+                PaneType::TerminalPane => return self.pane_model.panes[0],
+                PaneType::ButtonPane => return self.pane_model.panes[0],
             }
         }
     
@@ -2701,7 +2766,7 @@ impl App {
         pane: pane_grid::Pane,
         //profile_id_opt: Option<ProfileId>,
     ) -> Task<Message> {
-        self.focus = Some(pane);
+        self.pane_model.focus = pane;
         match &self.term_event_tx_opt {
             Some(term_event_tx) => {
                 let colors = match self.config.color_scheme_kind() {
@@ -2852,13 +2917,7 @@ impl Application for App {
 
         let window_id_opt = core.main_window_id();
 
-        let (panestates, panes, splits) = pane_setup(
-            flags.config.show_button_row,
-            flags.config.show_embedded_terminal,
-            flags.config.show_second_panel,
-        );
-        let panes_created = panestates.len();
-
+        let pane_model = CommanderPaneGrid::new(segmented_button::ModelBuilder::default().build());
         //let initial_pane_id= 0;
         //let config = alacritty_terminal::term::Config {..Default::default()};
         let term_event_tx_opt = None;
@@ -2870,11 +2929,7 @@ impl Application for App {
             nav_model: segmented_button::ModelBuilder::default().build(),
             tab_model1: segmented_button::ModelBuilder::default().build(),
             tab_model2: segmented_button::ModelBuilder::default().build(),
-            panes,
-            splits,
-            panestates,
-            panes_created,
-            focus: None,
+            pane_model,
             term_event_tx_opt,
             terminal,
             active_panel: PaneType::LeftPane,
@@ -2882,7 +2937,7 @@ impl Application for App {
             show_embedded_terminal: flags.config.show_embedded_terminal,
             show_second_panel: flags.config.show_second_panel,
             config_handler: flags.config_handler,
-            config: flags.config,
+            config: flags.config.clone(),
             mode: flags.mode,
             app_themes,
             themes: HashMap::new(),
@@ -2929,6 +2984,12 @@ impl Application for App {
             tab_drag_id_left: DragId::new(),
             tab_drag_id_right: DragId::new(),
         };
+        app.pane_setup(
+            flags.config.show_button_row,
+            flags.config.show_embedded_terminal,
+            flags.config.show_second_panel,
+        );
+
 
         let mut commands = vec![app.update_config()];
 
@@ -3896,7 +3957,7 @@ impl Application for App {
                 }
             }
             Message::Key(modifiers, key) => {
-                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                if self.show_embedded_terminal && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::TerminalPane] {
                     for (key_bind, action) in &self.key_binds_terminal {
                         if key_bind.matches(modifiers, &key) {
                             return self.update(action.message(None));
@@ -4380,7 +4441,7 @@ impl Application for App {
                 }
             }
             Message::Open(entity_opt) => {
-                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                if self.show_embedded_terminal && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::TerminalPane] {
                     if let Some(terminal) = self.terminal.as_mut() {
                         if let Ok(mut terminal_ok) = terminal.lock() {
                             //if terminal_ok.needs_update {
@@ -4487,7 +4548,7 @@ impl Application for App {
                 }
             }
             Message::OpenInNewTab(entity_opt) => {
-                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                if self.show_embedded_terminal && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::TerminalPane] {
                     if let Some(terminal) = self.terminal.as_mut() {
                         if let Ok(mut terminal_ok) = terminal.lock() {
                             if terminal_ok.needs_update {
@@ -4640,18 +4701,11 @@ impl Application for App {
                 }
             }
             Message::PaneUpdate => {
-                let (panestates, panes, splits) = pane_setup(
+                self.pane_setup(
                     self.show_button_row,
                     self.show_embedded_terminal,
                     self.show_second_panel,
                 );
-
-                self.panes_created = panestates.len();
-                self.panestates = panestates;
-                self.panes.clear();
-                self.panes.extend(panes);
-                self.splits.clear();
-                self.splits.extend(splits);
             }
             /*
             Message::PaneSplitFocused(axis) => {
@@ -4670,39 +4724,27 @@ impl Application for App {
                 }
             }
             */
-            Message::PaneFocusAdjacent(direction) => {
-                if let Some(pane) = self.focus {
-                    if let Some(adjacent) = self.panestates.adjacent(pane, direction) {
-                        self.focus = Some(adjacent);
-                    }
-                }
+            Message::PaneFocusAdjacent(_direction) => {
+                
             }
             Message::PaneClicked(pane) => {
-                if let Some(p) = self.panestates.get(pane) {
-                    match p.id {
+                    match self.pane_model.type_by_pane[&pane] {
                         PaneType::LeftPane => self.active_panel = PaneType::LeftPane,
                         PaneType::RightPane => self.active_panel = PaneType::RightPane,
                         _ => {}
                     }
-                }
-
-                self.focus = Some(pane);
+                self.pane_model.focus = pane;
             }
             Message::PaneResized(pane_grid::ResizeEvent { split, ratio }) => {
-                self.panestates.resize(split, ratio);
+                self.pane_model.panestates.resize(split, ratio);
             }
             Message::PaneDragged(pane_grid::DragEvent::Dropped { pane, target }) => {
-                self.panestates.drop(pane, target);
+                self.pane_model.panestates.drop(pane, target);
             }
             Message::PaneDragged(_) => {}
-            Message::PaneTogglePin(pane) => {
-                if let Some(Pane { is_pinned, .. }) = self.panestates.get_mut(pane) {
-                    *is_pinned = !*is_pinned;
-                }
-            }
-            Message::PaneMaximize(pane) => self.panestates.maximize(pane),
+            Message::PaneMaximize(pane) => self.pane_model.panestates.maximize(pane),
             Message::PaneRestore => {
-                self.panestates.restore();
+                self.pane_model.panestates.restore();
             }
             /*
             Message::PaneClose(pane) => {
@@ -5254,13 +5296,13 @@ impl Application for App {
                 }
                 if self.active_panel == PaneType::LeftPane {
                     let pane = self.pane_by_type(PaneType::RightPane);
-                    self.focus = Some(pane);
+                    self.pane_model.focus = pane;
                     self.active_panel = PaneType::RightPane;
                     let entity = self.tab_model2.active();
                     return self.update(Message::TabActivate(entity));
                 } else {
                     let pane = self.pane_by_type(PaneType::RightPane);
-                    self.focus = Some(pane);
+                    self.pane_model.focus = pane;
                     self.active_panel = PaneType::LeftPane;
                     let entity = self.tab_model1.active();
                     return self.update(Message::TabActivate(entity));
@@ -6010,10 +6052,10 @@ impl Application for App {
                 ]);
             }
             Message::TermMouseEnter(pane) => {
-                self.focus = Some(pane);
+                self.pane_model.focus = pane;
             }
             Message::TermNew => {
-                let pane = self.panes[0];
+                let pane = self.pane_model.pane_by_type[&PaneType::TerminalPane];
                 return self.create_and_focus_new_terminal(pane);
             }
             Message::ToggleContextPage(context_page) => {
@@ -6112,7 +6154,7 @@ impl Application for App {
                 }
             },
             Message::ZoomDefault(_entity_opt) => {
-                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                if self.show_embedded_terminal && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::TerminalPane] {
                     if let Some(terminal) = self.terminal.as_mut() {
                         if let Ok(mut term) = terminal.lock() {
                             term.set_zoom_adj(0);
@@ -6156,36 +6198,27 @@ impl Application for App {
                         *size = step.try_into().unwrap();
                     }
                 };
-                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
-                    if let Some(terminal) = self.terminal.as_mut() {
-                        if let Ok(mut term) = terminal.lock() {
-                            let cur_val = term.zoom_adj();
-                            term.set_zoom_adj(cur_val.saturating_add(1));
+                let entity;
+                if self.active_panel == PaneType::LeftPane {
+                    entity = self.tab_model1.active();
+                    let mut config = self.config.tab_left;
+                    if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
+                        match tab.config.view {
+                            tab1::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
+                            tab1::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
                         }
                     }
                 } else {
-                    let entity;
-                    if self.active_panel == PaneType::LeftPane {
-                        entity = self.tab_model1.active();
-                        let mut config = self.config.tab_left;
-                        if let Some(tab) = self.tab_model1.data_mut::<Tab1>(entity) {
-                            match tab.config.view {
-                                tab1::View::List => config.icon_sizes.list = 100.try_into().unwrap(),
-                                tab1::View::Grid => config.icon_sizes.grid = 100.try_into().unwrap(),
-                            }
-                        }
-                    } else {
-                        entity = self.tab_model2.active();
-                        let mut config = self.config.tab_right;
-                        if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
-                            match tab.config.view {
-                                tab2::View::List => zoom_in(&mut config.icon_sizes.list, 50, 500),
-                                tab2::View::Grid => zoom_in(&mut config.icon_sizes.grid, 50, 500),
-                            }
+                    entity = self.tab_model2.active();
+                    let mut config = self.config.tab_right;
+                    if let Some(tab) = self.tab_model2.data_mut::<Tab2>(entity) {
+                        match tab.config.view {
+                            tab2::View::List => zoom_in(&mut config.icon_sizes.list, 50, 500),
+                            tab2::View::Grid => zoom_in(&mut config.icon_sizes.grid, 50, 500),
                         }
                     }
-                    return self.update(Message::TabActivate(entity));
                 }
+                return self.update(Message::TabActivate(entity));
             }
             Message::ZoomOut(_entity_opt) => {
                 let zoom_out = |size: &mut NonZeroU16, min: u16, max: u16| {
@@ -6201,7 +6234,7 @@ impl Application for App {
                         *size = step.try_into().unwrap();
                     }
                 };
-                if self.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                if self.show_embedded_terminal && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::TerminalPane] {
                     if let Some(terminal) = self.terminal.as_mut() {
                         if let Ok(mut term) = terminal.lock() {
                             let cur_val = term.zoom_adj();
@@ -6357,7 +6390,7 @@ impl Application for App {
                 self.tab_dnd_hover_right = None;
             }
             Message::DndHoveredWindow(_path) => {
-                if self.config.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                if self.config.show_embedded_terminal && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::TerminalPane] {
                     // Terminal is active
                     //let s = osstr_to_string(path.clone().into_os_string());
                     //let _ = self.update(Message::PasteValueTerminal(s));
@@ -6378,7 +6411,7 @@ impl Application for App {
             Message::DndHoveredLeftWindow => {
                 self.tab_dnd_hover_left = None;
                 self.tab_dnd_hover_right = None;
-                if self.config.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                if self.config.show_embedded_terminal && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::TerminalPane] {
                     // Terminal is active
                     //let s = osstr_to_string(path.clone().into_os_string());
                     //let _ = self.update(Message::PasteValueTerminal(s));
@@ -6395,7 +6428,7 @@ impl Application for App {
                 }
             }
             Message::DndDropWindow(path) => {
-                if self.config.show_embedded_terminal && self.focus == Some(self.panes[0]) {
+                if self.config.show_embedded_terminal && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::TerminalPane] {
                     // Terminal is active
                     let s = osstr_to_string(path.clone().into_os_string());
                     let _ = self.update(Message::PasteValueTerminal(s));
@@ -7713,11 +7746,11 @@ impl Application for App {
         //let focus = self.focus;
         //let total_panes = self.panes.len();
 
-        let pane_grid = PaneGrid::new(&self.panestates, |id, pane, _is_maximized| {
+        let pane_grid = PaneGrid::new(&self.pane_model.panestates, |pane, tab_model, _is_maximized| {
             //let is_focused = focus == Some(id);
 
             pane_grid::Content::new(cosmic::widget::responsive(move |size| {
-                self.view_pane_content(id, pane, size)
+                self.view_pane_content(pane, tab_model, size)
             }))
             //.title_bar(title_bar)
             //.style(if is_focused {

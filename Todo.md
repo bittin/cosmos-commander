@@ -31,4 +31,5 @@
 ## open features
 
 - switching tabs changes the directory in the terminal
+- show number and size of files in the current directory for each tab
   
