@@ -19,6 +19,7 @@ mod mounter;
 mod mouse_area;
 mod mouse_reporter;
 pub mod operation;
+mod pane_grid;
 mod spawn_detached;
 use tab1::Location;
 pub mod tab1;
