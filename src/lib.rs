@@ -10,6 +10,7 @@ pub mod clipboard;
 use config::Config;
 pub mod config;
 pub mod dialog;
+mod dnd;
 mod key_bind;
 mod localize;
 mod menu;

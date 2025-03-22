@@ -18,7 +18,7 @@ use alacritty_terminal::{
 use cosmic::{
     iced::advanced::graphics::text::font_system,
     iced::mouse::ScrollDelta,
-    widget::{pane_grid, segmented_button},
+    widget::segmented_button,
 };
 use cosmic_text::{
     Attrs, AttrsList, Buffer, BufferLine, CacheKeyFlags, Family, LineEnding, Metrics, Shaping,
@@ -40,6 +40,8 @@ use indexmap::IndexSet;
 pub use alacritty_terminal::grid::Scroll as TerminalScroll;
 
 use crate::mouse_reporter::MouseReporter;
+use crate::pane_grid;
+
 
 /// Minimum contrast between a fixed cursor color and the cell's background.
 /// Duplicated from alacritty
