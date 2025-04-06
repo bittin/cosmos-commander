@@ -69,19 +69,20 @@ pub mod state;
 pub use axis::Axis;
 pub use configuration::Configuration;
 pub use content::Content;
-pub use controls::Controls;
+//pub use controls::Controls;
 pub use direction::Direction;
 pub use draggable::Draggable;
 pub use node::Node;
 pub use pane::Pane;
+//use rustc_hash::FxHashMap;
 pub use split::Split;
 pub use state::State;
 pub use title_bar::TitleBar;
 
-use cosmic::Theme as CosmicTheme;
-use cosmic::iced::widget::container;
-use cosmic::widget::dnd_destination::DragId;
-use cosmic::iced::clipboard::dnd::{self, DndAction, DndDestinationRectangle, DndEvent, OfferEvent};
+use crate::app::Message;
+use cosmic::iced::clipboard::dnd::{
+    self, DndAction, DndDestinationRectangle, DndEvent, OfferEvent,
+};
 use cosmic::iced::clipboard::mime::AllowedMimeTypes;
 use cosmic::iced::core::event::{self, Event};
 use cosmic::iced::core::layout;
@@ -91,9 +92,12 @@ use cosmic::iced::core::renderer;
 use cosmic::iced::core::touch;
 use cosmic::iced::core::widget::tree::{self, Tree};
 use cosmic::iced::core::{
-    self, Background, Border, Clipboard, Color, Element, Layout, Length,
-    Pixels, Point, Rectangle, Shell, Size, Theme, Vector, Widget,
+    self, Background, Border, Clipboard, Color, Element, Layout, Length, Pixels, Point, Rectangle,
+    Shell, Size, Theme, Vector, Widget,
 };
+use cosmic::iced::widget::container;
+use cosmic::widget::dnd_destination::{self, DragId};
+use cosmic::Theme as CosmicTheme;
 
 const DRAG_DEADBAND_DISTANCE: f32 = 10.0;
 const THICKNESS_RATIO: f32 = 25.0;
@@ -151,12 +155,8 @@ const THICKNESS_RATIO: f32 = 25.0;
 /// }
 /// ```
 #[allow(missing_debug_implementations)]
-pub struct PaneGrid<
-    'a,
-    Message,
-    Theme = cosmic::iced::Theme,
-    Renderer = cosmic::iced::Renderer,
-> where
+pub struct PaneGrid<'a, Message, Theme = cosmic::iced::Theme, Renderer = cosmic::iced::Renderer>
+where
     Theme: Catalog,
     Renderer: core::Renderer,
 {
@@ -169,13 +169,19 @@ pub struct PaneGrid<
     on_drag: Option<Box<dyn Fn(DragEvent) -> Message + 'a>>,
     #[allow(clippy::type_complexity)]
     on_resize: Option<(f32, Box<dyn Fn(ResizeEvent) -> Message + 'a>)>,
-    pub(super) on_dnd_drop:
-        Option<Box<dyn Fn(Vec<u8>, String, DndAction) -> Message + 'static>>,
+    pub(super) on_dnd_drop: Option<Box<dyn Fn(Vec<u8>, String, DndAction) -> Message + 'static>>,
     pub(super) mimes: Vec<String>,
     pub(super) on_dnd_enter: Option<Box<dyn Fn(Vec<String>) -> Message + 'static>>,
     pub(super) on_dnd_leave: Option<Box<dyn Fn() -> Message + 'static>>,
     class: <Theme as Catalog>::Class<'a>,
     pub(super) drag_id: Option<DragId>,
+    /// Dnd state
+    pub dnd_state: cosmic::widget::dnd_destination::State<Option<Pane>>,
+    pub panes: Vec<crate::pane_grid::Pane>,
+    pub drag_id_by_pane: std::collections::BTreeMap<crate::pane_grid::Pane, DragId>,
+    pub dnd_pane: Option<Pane>,
+    pub dnd_pane_id: Option<cosmic::widget::dnd_destination::DragId>,
+    pub dnd_action: Option<DndAction>,
 }
 
 impl<'a, Message, Theme, Renderer> PaneGrid<'a, Message, Theme, Renderer>
@@ -191,23 +197,17 @@ where
         state: &'a State<T>,
         view: impl Fn(Pane, &'a T, bool) -> Content<'a, Message, Theme, Renderer>,
     ) -> Self {
-        let contents = if let Some((pane, pane_state)) =
-            state.maximized.and_then(|pane| {
-                state.panes.get(&pane).map(|pane_state| (pane, pane_state))
-            }) {
-            Contents::Maximized(
-                pane,
-                view(pane, pane_state, true),
-                Node::Pane(pane),
-            )
+        let contents = if let Some((pane, pane_state)) = state
+            .maximized
+            .and_then(|pane| state.panes.get(&pane).map(|pane_state| (pane, pane_state)))
+        {
+            Contents::Maximized(pane, view(pane, pane_state, true), Node::Pane(pane))
         } else {
             Contents::All(
                 state
                     .panes
                     .iter()
-                    .map(|(pane, pane_state)| {
-                        (*pane, view(*pane, pane_state, false))
-                    })
+                    .map(|(pane, pane_state)| (*pane, view(*pane, pane_state, false)))
                     .collect(),
                 &state.internal,
             )
@@ -228,6 +228,12 @@ where
             mimes: Vec::new(),
             class: <Theme as Catalog>::default(),
             drag_id: None,
+            dnd_state: Default::default(),
+            panes: Vec::new(),
+            drag_id_by_pane: std::collections::BTreeMap::new(),
+            dnd_pane: None,
+            dnd_pane_id: None,
+            dnd_action: None,
         }
     }
 
@@ -286,13 +292,29 @@ where
         self
     }
 
+    pub fn drop_target_from_position(&self, target: Point) -> (Pane, DragId) {
+        let spacing = 5.0;
+        let mut id = DragId::new();
+        let limits = cosmic::iced::core::layout::Limits::NONE
+            .min_width(1.0)
+            .min_height(1.0);
+        let window_size = limits.resolve(self.width, self.height, Size::ZERO);
+        for (pane, rect) in self.contents.layout().pane_regions(spacing, window_size) {
+            if rect.contains(target) {
+                id = self.drag_id_by_pane[&pane];
+                return (pane, id);
+            }
+        }
+        (Pane(0), id)
+    }
+
     /// Handle the dnd drop event.
     pub fn on_dnd_drop<D: AllowedMimeTypes>(
         mut self,
-        dnd_drop_handler: impl Fn(Option<D>, DndAction) -> Message + 'static,
+        dnd_drop_handler: impl Fn(Option<DragId>, Option<D>, DndAction) -> Message + 'static,
     ) -> Self {
         self.on_dnd_drop = Some(Box::new(move |data, mime, action| {
-            dnd_drop_handler(D::try_from((data, mime)).ok(), action)
+            dnd_drop_handler(self.dnd_pane_id, D::try_from((data, mime)).ok(), action)
         }));
         self.mimes = D::allowed().iter().cloned().collect();
         self
@@ -328,8 +350,11 @@ where
         self.drag_id.map_or_else(
             || {
                 u128::from(match &self.id.0 {
-                    cosmic::iced_core::id::Internal::Unique(id) | cosmic::iced_core::id::Internal::Custom(id, _) => *id,
-                    cosmic::iced_core::id::Internal::Set(_) => panic!("Invalid Id assigned to dnd destination."),
+                    cosmic::iced_core::id::Internal::Unique(id)
+                    | cosmic::iced_core::id::Internal::Custom(id, _) => *id,
+                    cosmic::iced_core::id::Internal::Set(_) => {
+                        panic!("Invalid Id assigned to dnd destination.")
+                    }
                 })
             },
             |id| id.0,
@@ -348,10 +373,7 @@ where
 
     /// Sets the style class of the [`PaneGrid`].
     #[must_use]
-    pub fn class(
-        mut self,
-        class: impl Into<<Theme as Catalog>::Class<'a>>,
-    ) -> Self {
+    pub fn class(mut self, class: impl Into<<Theme as Catalog>::Class<'a>>) -> Self {
         self.class = class.into();
         self
     }
@@ -372,9 +394,7 @@ where
     }
 
     fn state(&self) -> tree::State {
-        tree::State::new(
-            state::Action::Idle,
-        )
+        tree::State::new(state::Action::Idle)
     }
 
     fn children(&self) -> Vec<Tree> {
@@ -429,11 +449,7 @@ where
                 let region = regions.get(&pane)?;
                 let size = Size::new(region.width, region.height);
 
-                let node = content.layout(
-                    tree,
-                    renderer,
-                    &layout::Limits::new(size, size),
-                );
+                let node = content.layout(tree, renderer, &layout::Limits::new(size, size));
 
                 Some(node.move_to(Point::new(region.x, region.y)))
             })
@@ -473,7 +489,6 @@ where
     ) -> event::Status {
         let mut event_status = event::Status::Ignored;
 
-        let action = tree.state.downcast_mut::<state::Action>();
         let node = self.contents.layout();
 
         let on_drag = if self.drag_enabled() {
@@ -481,8 +496,127 @@ where
         } else {
             &None
         };
+        let my_id = self.get_drag_id();
+        let event_clone = event.clone();
+        let action = tree.state.downcast_mut::<state::Action>();
 
-        match event {
+        match event_clone {
+            Event::Dnd(e) => {
+                self.dnd_state
+                    .drag_offer
+                    .as_ref()
+                    .map(|dnd_state| dnd_state.data);
+                match e {
+                    DndEvent::Offer(
+                        id,
+                        OfferEvent::Enter {
+                            x, y, mime_types, ..
+                        },
+                    ) if Some(my_id) == id => {
+                        let on_dnd_enter = self
+                            .on_dnd_enter
+                            .as_ref()
+                            //.zip(entity.clone())
+                            .map(|on_enter| move |_, _, mime_types| on_enter(mime_types));
+                        let target = Point {
+                            x: x as f32,
+                            y: y as f32,
+                        };
+                        let (pane, id) = self.drop_target_from_position(target);
+                        self.dnd_pane_id = Some(id);
+                        self.dnd_pane = Some(pane);
+                        *action = state::Action::Dropped {
+                            target,
+                         };
+                        _ = self.dnd_state.on_enter::<Message>(
+                            x,
+                            y,
+                            mime_types.clone(),
+                            on_dnd_enter,
+                            Some(pane),
+                        );
+                    }
+                    DndEvent::Offer(id, OfferEvent::Leave | OfferEvent::LeaveDestination)
+                        if Some(my_id) == id =>
+                    {
+                        self.on_dnd_leave
+                            .as_ref()
+                            //.zip(entity.clone())
+                            .map(|on_dnd_leave| move || on_dnd_leave);
+                        self.dnd_pane_id = None;
+                        self.dnd_pane = None;
+                        _ = self.dnd_state.on_leave::<Message>(None);
+                    }
+                    DndEvent::Offer(id, OfferEvent::Motion { x, y }) if Some(my_id) == id => {
+                        self.dnd_state.on_motion::<Message>(
+                            x,
+                            y,
+                            None::<fn(_, _) -> Message>,
+                            None::<fn(_, _, _) -> Message>,
+                            None,
+                        );
+                        if let Some(on_dnd_leave) = self.on_dnd_leave.as_ref() {
+                            *action = state::Action::Idle;
+                            self.dnd_pane_id = None;
+                            self.dnd_pane = None;
+                                shell.publish(on_dnd_leave());
+                        }
+                    }
+                    DndEvent::Offer(id, OfferEvent::Drop) if Some(my_id) == id => {
+                        _ = self
+                            .dnd_state
+                            .on_drop::<Message>(None::<fn(_, _) -> Message>);
+                    }
+                    DndEvent::Offer(id, OfferEvent::SelectedAction(action))
+                        if Some(my_id) == id =>
+                    {
+                        if self.dnd_state.drag_offer.is_some() {
+                            _ = self
+                                .dnd_state
+                                .on_action_selected::<Message>(action, None::<fn(_) -> Message>);
+                        }
+                    }
+                    DndEvent::Offer(id, OfferEvent::Data { data, mime_type })
+                        if Some(my_id) == id =>
+                    {
+                        self.dnd_pane_id = None;
+                        self.dnd_pane = None;
+                        let on_drop = self.on_dnd_drop.as_ref();
+                        let on_drop = on_drop
+                            .map(|on_drop| |mime, data, action, _, _| on_drop(data, mime, action));
+                        _ = self.dnd_state.on_data_received(
+                            mime_type.to_string(),
+                            data.to_vec(),
+                            None::<fn(_, _) -> Message>,
+                            on_drop,
+                        );
+                        return event::Status::Captured;
+                    }
+                    DndEvent::Source(s) => match s {
+                        dnd::SourceEvent::Action(a) => {
+                            self.dnd_action = Some(a);
+                        }
+                        dnd::SourceEvent::Mime(m) => {
+                            if let Some(mime) = m {
+                                if !self.mimes.contains(&mime) {
+                                    self.mimes.push(mime);
+                                }
+                            }
+                        }
+                        dnd::SourceEvent::Finished => {
+                            
+                        }
+                        dnd::SourceEvent::Cancelled => {
+                            self.dnd_action = None;
+                            self.mimes.clear();
+                        }
+                        dnd::SourceEvent::Dropped => {
+                            
+                        }
+                    }
+                    _ => {}
+                }
+            }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerPressed { .. }) => {
                 let bounds = layout.bounds();
@@ -510,8 +644,7 @@ where
 
                             if let Some((split, axis, _)) = clicked_split {
                                 if action.picked_pane().is_none() {
-                                    *action =
-                                        state::Action::Resizing { split, axis };
+                                    *action = state::Action::Resizing { split, axis };
                                 }
                             } else {
                                 click_pane(
@@ -545,38 +678,26 @@ where
                 if let Some((pane, origin)) = action.picked_pane() {
                     if let Some(on_drag) = on_drag {
                         if let Some(cursor_position) = cursor.position() {
-                            if cursor_position.distance(origin)
-                                > DRAG_DEADBAND_DISTANCE
-                            {
-                                let event = if let Some(edge) =
-                                    in_edge(layout, cursor_position)
-                                {
+                            if cursor_position.distance(origin) > DRAG_DEADBAND_DISTANCE {
+                                let event = if let Some(edge) = in_edge(layout, cursor_position) {
                                     DragEvent::Dropped {
                                         pane,
                                         target: Target::Edge(edge),
                                     }
                                 } else {
-                                    let dropped_region = self
-                                        .contents
-                                        .iter()
-                                        .zip(layout.children())
-                                        .find_map(|(target, layout)| {
-                                            layout_region(
-                                                layout,
-                                                cursor_position,
-                                            )
-                                            .map(|region| (target, region))
-                                        });
+                                    let dropped_region =
+                                        self.contents.iter().zip(layout.children()).find_map(
+                                            |(target, layout)| {
+                                                layout_region(layout, cursor_position)
+                                                    .map(|region| (target, region))
+                                            },
+                                        );
 
                                     match dropped_region {
-                                        Some(((target, _), region))
-                                            if pane != target =>
-                                        {
+                                        Some(((target, _), region)) if pane != target => {
                                             DragEvent::Dropped {
                                                 pane,
-                                                target: Target::Pane(
-                                                    target, region,
-                                                ),
+                                                target: Target::Pane(target, region),
                                             }
                                         }
                                         _ => DragEvent::Canceled { pane },
@@ -601,36 +722,25 @@ where
                     if let Some((split, _)) = action.picked_split() {
                         let bounds = layout.bounds();
 
-                        let splits = node.split_regions(
-                            self.spacing,
-                            Size::new(bounds.width, bounds.height),
-                        );
+                        let splits = node
+                            .split_regions(self.spacing, Size::new(bounds.width, bounds.height));
 
                         if let Some((axis, rectangle, _)) = splits.get(&split) {
                             if let Some(cursor_position) = cursor.position() {
                                 let ratio = match axis {
                                     Axis::Horizontal => {
-                                        let position = cursor_position.y
-                                            - bounds.y
-                                            - rectangle.y;
+                                        let position = cursor_position.y - bounds.y - rectangle.y;
 
-                                        (position / rectangle.height)
-                                            .clamp(0.1, 0.9)
+                                        (position / rectangle.height).clamp(0.1, 0.9)
                                     }
                                     Axis::Vertical => {
-                                        let position = cursor_position.x
-                                            - bounds.x
-                                            - rectangle.x;
+                                        let position = cursor_position.x - bounds.x - rectangle.x;
 
-                                        (position / rectangle.width)
-                                            .clamp(0.1, 0.9)
+                                        (position / rectangle.width).clamp(0.1, 0.9)
                                     }
                                 };
 
-                                shell.publish(on_resize(ResizeEvent {
-                                    split,
-                                    ratio,
-                                }));
+                                shell.publish(on_resize(ResizeEvent { split, ratio }));
 
                                 event_status = event::Status::Captured;
                             }
@@ -682,34 +792,32 @@ where
         let resize_leeway = self.on_resize.as_ref().map(|(leeway, _)| *leeway);
         let node = self.contents.layout();
 
-        let resize_axis =
-            action.picked_split().map(|(_, axis)| axis).or_else(|| {
-                resize_leeway.and_then(|leeway| {
-                    let cursor_position = cursor.position()?;
-                    let bounds = layout.bounds();
+        let resize_axis = action.picked_split().map(|(_, axis)| axis).or_else(|| {
+            resize_leeway.and_then(|leeway| {
+                let cursor_position = cursor.position()?;
+                let bounds = layout.bounds();
 
-                    let splits =
-                        node.split_regions(self.spacing, bounds.size());
+                let splits = node.split_regions(self.spacing, bounds.size());
 
-                    let relative_cursor = Point::new(
-                        cursor_position.x - bounds.x,
-                        cursor_position.y - bounds.y,
-                    );
+                let relative_cursor =
+                    Point::new(cursor_position.x - bounds.x, cursor_position.y - bounds.y);
 
-                    hovered_split(
-                        splits.iter(),
-                        self.spacing + leeway,
-                        relative_cursor,
-                    )
+                hovered_split(splits.iter(), self.spacing + leeway, relative_cursor)
                     .map(|(_, axis, _)| axis)
-                })
-            });
+            })
+        });
 
         if let Some(resize_axis) = resize_axis {
             return match resize_axis {
                 Axis::Horizontal => mouse::Interaction::ResizingVertically,
                 Axis::Vertical => mouse::Interaction::ResizingHorizontally,
             };
+        }
+
+        let bounds = layout.bounds();
+
+        if cursor.is_over(bounds) {
+            return mouse::Interaction::Pointer;
         }
 
         self.contents
@@ -767,8 +875,7 @@ where
 
                 let (_axis, region, ratio) = splits.get(&split)?;
 
-                let region =
-                    axis.split_line_bounds(*region, *ratio, self.spacing);
+                let region = axis.split_line_bounds(*region, *ratio, self.spacing);
 
                 Some((axis, region + Vector::new(bounds.x, bounds.y), true))
             })
@@ -777,25 +884,15 @@ where
                     let cursor_position = cursor.position()?;
                     let bounds = layout.bounds();
 
-                    let relative_cursor = Point::new(
-                        cursor_position.x - bounds.x,
-                        cursor_position.y - bounds.y,
-                    );
+                    let relative_cursor =
+                        Point::new(cursor_position.x - bounds.x, cursor_position.y - bounds.y);
 
-                    let splits =
-                        node.split_regions(self.spacing, bounds.size());
+                    let splits = node.split_regions(self.spacing, bounds.size());
 
-                    let (_split, axis, region) = hovered_split(
-                        splits.iter(),
-                        self.spacing + leeway,
-                        relative_cursor,
-                    )?;
+                    let (_split, axis, region) =
+                        hovered_split(splits.iter(), self.spacing + leeway, relative_cursor)?;
 
-                    Some((
-                        axis,
-                        region + Vector::new(bounds.x, bounds.y),
-                        false,
-                    ))
+                    Some((axis, region + Vector::new(bounds.x, bounds.y), false))
                 }
                 None => None,
             });
@@ -818,13 +915,10 @@ where
 
         let style = Catalog::style(theme, &self.class);
 
-        for ((id, (content, tree)), pane_layout) in
-            contents.zip(layout.children())
-        {
+        for ((id, (content, tree)), pane_layout) in contents.zip(layout.children()) {
             match picked_pane {
                 Some((dragging, origin)) if id == dragging => {
-                    render_picked_pane =
-                        Some(((content, tree), origin, pane_layout));
+                    render_picked_pane = Some(((content, tree), origin, pane_layout));
                 }
                 Some((dragging, _)) if id != dragging => {
                     content.draw(
@@ -838,13 +932,11 @@ where
                     );
 
                     if picked_pane.is_some() && pane_in_edge.is_none() {
-                        if let Some(region) =
-                            cursor.position().and_then(|cursor_position| {
-                                layout_region(pane_layout, cursor_position)
-                            })
+                        if let Some(region) = cursor
+                            .position()
+                            .and_then(|cursor_position| layout_region(pane_layout, cursor_position))
                         {
-                            let bounds =
-                                layout_region_bounds(pane_layout, region);
+                            let bounds = layout_region_bounds(pane_layout, region);
 
                             renderer.fill_quad(
                                 renderer::Quad {
@@ -889,8 +981,7 @@ where
             if let Some(cursor_position) = cursor.position() {
                 let bounds = layout.bounds();
 
-                let translation =
-                    cursor_position - Point::new(origin.x, origin.y);
+                let translation = cursor_position - Point::new(origin.x, origin.y);
 
                 renderer.with_translation(translation, |renderer| {
                     renderer.with_layer(bounds, |renderer| {
@@ -921,17 +1012,13 @@ where
                         bounds: match axis {
                             Axis::Horizontal => Rectangle {
                                 x: split_region.x,
-                                y: (split_region.y
-                                    + (split_region.height - highlight.width)
-                                        / 2.0)
+                                y: (split_region.y + (split_region.height - highlight.width) / 2.0)
                                     .round(),
                                 width: split_region.width,
                                 height: highlight.width,
                             },
                             Axis::Vertical => Rectangle {
-                                x: (split_region.x
-                                    + (split_region.width - highlight.width)
-                                        / 2.0)
+                                x: (split_region.x + (split_region.width - highlight.width) / 2.0)
                                     .round(),
                                 y: split_region.y,
                                 width: highlight.width,
@@ -964,6 +1051,43 @@ where
             .collect::<Vec<_>>();
 
         (!children.is_empty()).then(|| Group::with_children(children).overlay())
+    }
+
+    fn drag_destinations(
+        &self,
+        _state: &Tree,
+        _layout: Layout<'_>,
+        _renderer: &Renderer,
+        dnd_rectangles: &mut cosmic::iced_core::clipboard::DndDestinationRectangles,
+    ) {
+        let spacing = 5.0;
+
+        let limits = cosmic::iced::core::layout::Limits::NONE
+            .min_width(1.0)
+            .min_height(1.0);
+        let window_size = limits.resolve(self.width, self.height, Size::ZERO);
+        for (pane, size) in self.contents.layout().pane_regions(spacing, window_size) {
+            let my_id = self.drag_id_by_pane[&pane];
+
+            let dnd_rect = DndDestinationRectangle {
+                id: my_id.0,
+                rectangle: dnd::Rectangle {
+                    x: f64::from(size.x),
+                    y: f64::from(size.y),
+                    width: f64::from(size.width),
+                    height: f64::from(size.height),
+                },
+                mime_types: self
+                    .mimes
+                    .clone()
+                    .into_iter()
+                    .map(std::borrow::Cow::Owned)
+                    .collect(),
+                actions: DndAction::Copy | DndAction::Move,
+                preferred: DndAction::Move,
+            };
+            dnd_rectangles.push(dnd_rect);
+        }
     }
 }
 
@@ -1045,14 +1169,11 @@ fn in_edge(layout: Layout<'_>, cursor: Point) -> Option<Edge> {
 
     if cursor.x > bounds.x && cursor.x < bounds.x + thickness {
         Some(Edge::Left)
-    } else if cursor.x > bounds.x + bounds.width - thickness
-        && cursor.x < bounds.x + bounds.width
-    {
+    } else if cursor.x > bounds.x + bounds.width - thickness && cursor.x < bounds.x + bounds.width {
         Some(Edge::Right)
     } else if cursor.y > bounds.y && cursor.y < bounds.y + thickness {
         Some(Edge::Top)
-    } else if cursor.y > bounds.y + bounds.height - thickness
-        && cursor.y < bounds.y + bounds.height
+    } else if cursor.y > bounds.y + bounds.height - thickness && cursor.y < bounds.y + bounds.height
     {
         Some(Edge::Bottom)
     } else {
@@ -1228,23 +1349,19 @@ impl<'a, T> Contents<'a, T> {
     /// Returns an iterator over the values of the [`Contents`]
     pub fn iter(&self) -> Box<dyn Iterator<Item = (Pane, &T)> + '_> {
         match self {
-            Contents::All(contents, _) => Box::new(
-                contents.iter().map(|(pane, content)| (*pane, content)),
-            ),
-            Contents::Maximized(pane, content, _) => {
-                Box::new(std::iter::once((*pane, content)))
+            Contents::All(contents, _) => {
+                Box::new(contents.iter().map(|(pane, content)| (*pane, content)))
             }
+            Contents::Maximized(pane, content, _) => Box::new(std::iter::once((*pane, content))),
         }
     }
 
     fn iter_mut(&mut self) -> Box<dyn Iterator<Item = (Pane, &mut T)> + '_> {
         match self {
-            Contents::All(contents, _) => Box::new(
-                contents.iter_mut().map(|(pane, content)| (*pane, content)),
-            ),
-            Contents::Maximized(pane, content, _) => {
-                Box::new(std::iter::once((*pane, content)))
+            Contents::All(contents, _) => {
+                Box::new(contents.iter_mut().map(|(pane, content)| (*pane, content)))
             }
+            Contents::Maximized(pane, content, _) => Box::new(std::iter::once((*pane, content))),
         }
     }
 
@@ -1324,7 +1441,6 @@ impl Catalog for CosmicTheme {
         class(self)
     }
 }
-
 
 /// The default style of a [`PaneGrid`].
 pub fn default(theme: &Theme) -> Style {

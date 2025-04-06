@@ -20,7 +20,6 @@ use rustc_hash::FxHashMap;
 ///
 /// [`PaneGrid`]: super::PaneGrid
 /// [`PaneGrid::new`]: super::PaneGrid::new
-#[derive(Debug, Clone)]
 pub struct State<T> {
     /// The panes of the [`PaneGrid`].
     ///
@@ -36,6 +35,9 @@ pub struct State<T> {
     ///
     /// [`PaneGrid`]: super::PaneGrid
     pub(super) maximized: Option<Pane>,
+    
+    // size of the application window
+    pub window_size: crate::pane_grid::dnd::Rectangle,
 }
 
 impl<T> State<T> {
@@ -44,10 +46,10 @@ impl<T> State<T> {
     ///
     /// Alongside the [`State`], it returns the first [`Pane`] identifier.
     pub fn new(first_pane_state: T) -> (Self, Pane) {
-        (
-            Self::with_configuration(Configuration::Pane(first_pane_state)),
-            Pane(0),
-        )
+        let states = Self::with_configuration(Configuration::Pane(first_pane_state));
+        let pane = Pane(0);
+        
+        (states, pane)
     }
 
     /// Creates a new [`State`] with the given [`Configuration`].
@@ -61,6 +63,7 @@ impl<T> State<T> {
             panes,
             internal,
             maximized: None,
+            window_size: crate::pane_grid::dnd::Rectangle {..Default::default()},
         }
     }
 
@@ -145,8 +148,11 @@ impl<T> State<T> {
         pane: Pane,
         state: T,
     ) -> Option<(Pane, Split)> {
-        self.split_node(axis, Some(pane), state, false)
-    }
+        if let Some((pane, split)) = self.split_node(axis, Some(pane), state, false) {
+            return Some((pane, split));
+        }
+        None
+    }   
 
     /// Split a target [`Pane`] with a given [`Pane`] on a given [`Region`].
     ///
@@ -421,6 +427,13 @@ pub enum Action {
         /// The [`Axis`] of the [`Split`].
         axis: Axis,
     },
+    /// something is dragged into the [`PaneGrid`]
+    ///
+    /// [`PaneGrid`]: super::PaneGrid
+    Dropped {
+        /// The end [`Point`] of the drag interaction.
+        target: Point,
+   },
 }
 
 impl Action {
