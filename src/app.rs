@@ -432,6 +432,7 @@ pub enum Message {
     LaunchUrl(String),
     MaybeExit,
     Modifiers(Modifiers),
+    Move(Point),
     MoveTab(Option<segmented_button::Entity>),
     MoveToTrash(Option<Entity>),
     MounterItems(MounterKey, MounterItems),
@@ -467,6 +468,7 @@ pub enum Message {
     PaneClicked(pane_grid::Pane),
     PaneDragged(pane_grid::DragEvent),
     PaneResized(pane_grid::ResizeEvent),
+    PaneDropEvent(pane_grid::Pane, DragId),
     //PaneTogglePin(pane_grid::Pane),
     PaneMaximize(pane_grid::Pane),
     PaneRestore,
@@ -578,10 +580,11 @@ pub enum Message {
     DndHoveredLeftWindow,
     DndPaneDrop(Option<(Pane, crate::dnd::DndDrop)>),
     DndDropWindow(PathBuf),
-    DndDropPanegrid(Option<ClipboardPaste>, DndAction),
+    DndDropPanegrid(Option<DragId>, Option<ClipboardPaste>, DndAction),
     DndDropTabLeft(Entity, Option<ClipboardPaste>, DndAction),
     DndDropTabRight(Entity, Option<ClipboardPaste>, DndAction),
     DndDropNav(Entity, Option<ClipboardPaste>, DndAction),
+    DndPaneGridDropTarget(pane_grid::Pane, DragId),
     Recents,
     #[cfg(feature = "wayland")]
     OutputEvent(OutputEvent, WlOutput),
@@ -741,6 +744,7 @@ pub struct CommanderPaneGrid {
     pub focus: pane_grid::Pane,
     pub panes: Vec<pane_grid::Pane>,
     pub splits: Vec<pane_grid::Split>,
+    pub drag_id_by_pane: BTreeMap<pane_grid::Pane, DragId>,
     pub entity_by_pane: BTreeMap<pane_grid::Pane, segmented_button::Entity>,
     pub entity_by_type: BTreeMap<PaneType, segmented_button::Entity>,
     pub pane_by_entity: BTreeMap<segmented_button::Entity, pane_grid::Pane>,
@@ -748,10 +752,12 @@ pub struct CommanderPaneGrid {
     pub type_by_entity: BTreeMap<segmented_button::Entity, PaneType>,
     pub type_by_pane: BTreeMap<pane_grid::Pane, PaneType>,
     pub first_pane: pane_grid::Pane,
+    pub drag_pane: Option<pane_grid::Pane>,
+    pub drag_id: Option<DragId>,
 }
 
 impl CommanderPaneGrid {
-    pub fn new(model: TabModel) -> Self {
+    pub fn new(model: TabModel, drag_id: DragId) -> Self {
         let (panestates, pane) = pane_grid::State::new(model);
         let mut terminal_ids = HashMap::new();
         terminal_ids.insert(pane, cosmic::widget::Id::unique());
@@ -761,6 +767,7 @@ impl CommanderPaneGrid {
             focus: pane,
             panes: vec![pane],
             splits: Vec::new(),
+            drag_id_by_pane: BTreeMap::new(),
             entity_by_pane: BTreeMap::new(),
             entity_by_type: BTreeMap::new(),
             pane_by_entity: BTreeMap::new(),
@@ -768,7 +775,10 @@ impl CommanderPaneGrid {
             type_by_entity: BTreeMap::new(),
             type_by_pane: BTreeMap::new(),
             first_pane: pane,
+            drag_pane: None,
+            drag_id: None,
         };
+        v.drag_id_by_pane.insert(pane, drag_id);
         v.pane_by_type.insert(PaneType::LeftPane, pane);
         v.type_by_pane.insert(pane, PaneType::LeftPane);
         let entity;
@@ -791,7 +801,7 @@ impl CommanderPaneGrid {
         self.panestates.get_mut(self.focus)
     }
 
-    pub fn insert(&mut self, pane_type: PaneType, pane: pane_grid::Pane, split: pane_grid::Split) {
+    pub fn insert(&mut self, pane_type: PaneType, pane: pane_grid::Pane, split: pane_grid::Split, drag_id: DragId) {
         if let Some(tab_model) = self.active_mut() {
             let title = match pane_type {
                 PaneType::ButtonPane => "ButtonPane".to_string(),
@@ -808,6 +818,7 @@ impl CommanderPaneGrid {
             self.panes.push(pane);
             self.splits.push(split);
             self.focus = pane;
+            self.drag_id_by_pane.insert(pane, drag_id);
             self.pane_by_type.insert(pane_type, pane);
             self.type_by_pane.insert(pane, pane_type);
             self.entity_by_pane.insert(pane, entity);
@@ -835,6 +846,15 @@ impl CommanderPaneGrid {
 
     pub fn focussed(&self) -> PaneType {
         return self.type_by_pane[&self.focus];
+    }
+
+    pub fn drop_target(&self, drag_id: DragId) -> PaneType {
+        for p in self.panes.iter() {
+            if self.drag_id_by_pane[p] == drag_id {
+                return self.type_by_pane[p];
+            }
+        }
+        PaneType::LeftPane
     }
 }
 
@@ -895,8 +915,8 @@ pub struct App {
     window_id_opt: Option<window::Id>,
     windows: HashMap<window::Id, WindowKind>,
     nav_dnd_hover: Option<(Location1, Instant)>,
-    nav_dnd_hover_left: Option<(Location1, Instant)>,
-    nav_dnd_hover_right: Option<(Location2, Instant)>,
+    loc_dnd_hover_left: Option<(Location1, Instant)>,
+    loc_dnd_hover_right: Option<(Location2, Instant)>,
     tab_dnd_hover_left: Option<(Entity, Instant)>,
     tab_dnd_hover_right: Option<(Entity, Instant)>,
     tab_dnd_hover: Option<(Entity, Instant)>,
@@ -905,6 +925,9 @@ pub struct App {
     nav_drag_id: DragId,
     tab_drag_id_left: DragId,
     tab_drag_id_right: DragId,
+    tab_drag_id_buttons: DragId,
+    dnd_drag_pane: Option<pane_grid::Pane>,
+    dnd_drag_id: Option<DragId>,
 }
 
 impl App {
@@ -1608,14 +1631,14 @@ impl App {
                     segmented_button::ModelBuilder::default().build(),
                 ) {
                     self.pane_model.panestates.resize(sb, 0.75);
-                    self.pane_model.insert(PaneType::TerminalPane, t, st);
-                    self.pane_model.insert(PaneType::ButtonPane, b, sb);
+                    self.pane_model.insert(PaneType::TerminalPane, t, st, self.term_drag_id);
+                    self.pane_model.insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
                     if let Some((r, sr)) = self.pane_model.panestates.split(
                         pane_grid::Axis::Vertical,
                         pane,
                         segmented_button::ModelBuilder::default().build(),
                     ) {
-                        self.pane_model.insert(PaneType::RightPane, r, sr);
+                        self.pane_model.insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
                     }
                 }
             }
@@ -1633,8 +1656,8 @@ impl App {
                     segmented_button::ModelBuilder::default().build(),
                 ) {
                     self.pane_model.panestates.resize(sb, 0.75);
-                    self.pane_model.insert(PaneType::TerminalPane, t, st);
-                    self.pane_model.insert(PaneType::ButtonPane, b, sb);
+                    self.pane_model.insert(PaneType::TerminalPane, t, st, self.term_drag_id);
+                    self.pane_model.insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
                 }
             }
         } else if !show_button_row && show_embedded_terminal && show_second_panel {
@@ -1644,13 +1667,13 @@ impl App {
                 segmented_button::ModelBuilder::default().build(),
             ) {
                 self.pane_model.panestates.resize(st, 0.75);
-                self.pane_model.insert(PaneType::TerminalPane, t, st);
+                self.pane_model.insert(PaneType::TerminalPane, t, st, self.term_drag_id);
                 if let Some((r, sr)) = self.pane_model.panestates.split(
                     pane_grid::Axis::Vertical,
                     pane,
                     segmented_button::ModelBuilder::default().build(),
                 ) {
-                    self.pane_model.insert(PaneType::RightPane, r, sr);
+                    self.pane_model.insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
                 }
             }
         } else if show_button_row && !show_embedded_terminal && show_second_panel {
@@ -1660,13 +1683,13 @@ impl App {
                 segmented_button::ModelBuilder::default().build(),
             ) {
                 self.pane_model.panestates.resize(sb, 0.95);
-                self.pane_model.insert(PaneType::ButtonPane, b, sb);
+                self.pane_model.insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
                 if let Some((r, sr)) = self.pane_model.panestates.split(
                     pane_grid::Axis::Vertical,
                     pane,
                     segmented_button::ModelBuilder::default().build(),
                 ) {
-                    self.pane_model.insert(PaneType::RightPane, r, sr);
+                    self.pane_model.insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
                 }
             }
         } else if !show_button_row && show_embedded_terminal && !show_second_panel {
@@ -1676,7 +1699,7 @@ impl App {
                 segmented_button::ModelBuilder::default().build(),
             ) {
                 self.pane_model.panestates.resize(st, 0.85);
-                self.pane_model.insert(PaneType::TerminalPane, t, st);
+                self.pane_model.insert(PaneType::TerminalPane, t, st, self.tab_drag_id_right);
             }
         } else if show_button_row && !show_embedded_terminal && !show_second_panel {
             if let Some((b, sb)) = self.pane_model.panestates.split(
@@ -1685,7 +1708,7 @@ impl App {
                 segmented_button::ModelBuilder::default().build(),
             ) {
                 self.pane_model.panestates.resize(sb, 0.95);
-                self.pane_model.insert(PaneType::ButtonPane, b, sb);
+                self.pane_model.insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
             }
         } else if !show_button_row && !show_embedded_terminal && show_second_panel {
             if let Some((r, sr)) = self.pane_model.panestates.split(
@@ -1693,7 +1716,7 @@ impl App {
                 pane,
                 segmented_button::ModelBuilder::default().build(),
             ) {
-                self.pane_model.insert(PaneType::RightPane, r, sr);
+                self.pane_model.insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
             }
         } else {
             //
@@ -2973,8 +2996,8 @@ impl Application for App {
         let key_binds_terminal = key_binds_terminal();
 
         let window_id_opt = core.main_window_id();
-
-        let pane_model = CommanderPaneGrid::new(segmented_button::ModelBuilder::default().build());
+        let tab_drag_id_left = DragId::new();
+        let pane_model = CommanderPaneGrid::new(segmented_button::ModelBuilder::default().build(), tab_drag_id_left);
         //let initial_pane_id= 0;
         //let config = alacritty_terminal::term::Config {..Default::default()};
         let term_event_tx_opt = None;
@@ -3034,16 +3057,19 @@ impl Application for App {
             window_id_opt,
             windows: HashMap::new(),
             nav_dnd_hover: None,
-            nav_dnd_hover_left: None,
-            nav_dnd_hover_right: None,
+            loc_dnd_hover_left: None,
+            loc_dnd_hover_right: None,
             tab_dnd_hover: None,
             tab_dnd_hover_left: None,
             tab_dnd_hover_right: None,
             panegrid_drag_id: DragId::new(),
             term_drag_id: DragId::new(),
             nav_drag_id: DragId::new(),
-            tab_drag_id_left: DragId::new(),
+            tab_drag_id_left,
             tab_drag_id_right: DragId::new(),
+            tab_drag_id_buttons: DragId::new(),
+            dnd_drag_pane: None,
+            dnd_drag_id: None,
         };
 
         app.pane_setup(
@@ -6369,7 +6395,7 @@ impl Application for App {
             }
             Message::DndEnterNav(entity) => {
                 if let Some(location) = self.nav_model.data::<Location1>(entity) {
-                    self.nav_dnd_hover_left = Some((location.clone(), Instant::now()));
+                    self.nav_dnd_hover = Some((location.clone(), Instant::now()));
                     let location = location.clone();
                     return Task::perform(tokio::time::sleep(HOVER_DURATION1), move |_| {
                         cosmic::app::Message::App(Message::DndHoverLocTimeoutLeft(location.clone()))
@@ -6377,10 +6403,10 @@ impl Application for App {
                 }
             }
             Message::DndExitNav => {
-                self.nav_dnd_hover_left = None;
+                self.nav_dnd_hover = None;
             }
             Message::DndDropNav(entity, data, action) => {
-                self.nav_dnd_hover_left = None;
+                self.nav_dnd_hover = None;
                 if let Some((location, data)) = self.nav_model.data::<Location1>(entity).zip(data) {
                     let kind = match action {
                         DndAction::Move => ClipboardKind::Cut,
@@ -6408,11 +6434,11 @@ impl Application for App {
             }
             Message::DndHoverLocTimeoutLeft(location) => {
                 if self
-                    .nav_dnd_hover_left
+                    .loc_dnd_hover_left
                     .as_ref()
                     .is_some_and(|(loc, i)| *loc == location && i.elapsed() >= HOVER_DURATION1)
                 {
-                    self.nav_dnd_hover_left = None;
+                    self.loc_dnd_hover_left = None;
                     let entity = self.tab_model1.active();
                     let title_opt = match self.tab_model1.data_mut::<Tab1>(entity) {
                         Some(tab) => {
@@ -6433,11 +6459,11 @@ impl Application for App {
             }
             Message::DndHoverLocTimeoutRight(location) => {
                 if self
-                    .nav_dnd_hover_right
+                    .loc_dnd_hover_right
                     .as_ref()
                     .is_some_and(|(loc, i)| *loc == location && i.elapsed() >= HOVER_DURATION2)
                 {
-                    self.nav_dnd_hover_right = None;
+                    self.loc_dnd_hover_right = None;
                     let entity = self.tab_model2.active();
                     let title_opt = match self.tab_model2.data_mut::<Tab2>(entity) {
                         Some(tab) => {
@@ -6462,7 +6488,7 @@ impl Application for App {
                     .as_ref()
                     .is_some_and(|(loc, i)| *loc == location && i.elapsed() >= HOVER_DURATION1)
                 {
-                    self.nav_dnd_hover = None;
+                    self.tab_dnd_hover = None;
                     let entity = self.tab_model1.active();
                     let title_opt = match self.tab_model1.data_mut::<Tab1>(entity) {
                         Some(tab) => {
@@ -6481,81 +6507,58 @@ impl Application for App {
                     }
                 }
             }
-            Message::DndEnterPanegrid(v) => {
+            Message::DndEnterPanegrid(_v) => {
                 // find out which of the pane is under the mouse
-                // if it is terminal 
-                // pick the active entity of the active Filemanager panel
-                let entity = self.tab_model1.active();
-                self.tab_dnd_hover = Some((entity, Instant::now()));
-                return Task::perform(tokio::time::sleep(HOVER_DURATION1), move |_| {
-                    cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
-                });
+                //let terminal_pane = self.pane_model.pane_by_type[&PaneType::TerminalPane];
+                let left_pane = self.pane_model.pane_by_type[&PaneType::LeftPane];
+                if self.pane_model.focus == left_pane {
+                    let entity = self.tab_model1.active();
+                    self.tab_dnd_hover = Some((entity, Instant::now()));
+                    return Task::perform(tokio::time::sleep(HOVER_DURATION1), move |_| {
+                        cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
+                    });        
+                } else if self.config.show_second_panel 
+                && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::RightPane] {
+                    let entity = self.tab_model2.active();
+                    self.tab_dnd_hover = Some((entity, Instant::now()));
+                    return Task::perform(tokio::time::sleep(HOVER_DURATION2), move |_| {
+                        cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
+                    });        
+                } else {
+                   // if it is terminal 
+
+                }
             }
             Message::DndExitPanegrid => {
-                self.nav_dnd_hover = None;
+                self.tab_dnd_hover = None;
             }
-            Message::DndDropPanegrid(data, action) => {
-                self.nav_dnd_hover = None;
-                if self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::TerminalPane] 
-                || self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::ButtonPane] {
-                    if let Some(d) = data {
-                        if d.paths.len() > 0 {
-                            let s = osstr_to_string(d.paths[0].clone().into_os_string());
-                            let _ = self.update(Message::PasteValueTerminal(s));
-                        }
-                    }
-                } else if self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::LeftPane] {
+            Message::PaneDropEvent(pane, id) => {
+                self.pane_model.drag_pane = Some(pane);
+                self.pane_model.drag_id = Some(id);
+            }
+            Message::DndPaneGridDropTarget(pane, id) => {
+                self.dnd_drag_pane = Some(pane);
+                self.dnd_drag_id = Some(id);
+            }
+            Message::DndDropPanegrid(drag_opt, data, action) => {
+                self.tab_dnd_hover = None;
+                if drag_opt.is_none() {
+                    return Task::none();
+                }
+                let drag_id = drag_opt.unwrap();
+                if drag_id == self.tab_drag_id_left {
                     let entity = self.tab_model1.active();
-                    if let Some((tab, data)) = self.tab_model1.data::<Tab1>(entity).zip(data) {
-                        let kind = match action {
-                            DndAction::Move => ClipboardKind::Cut,
-                            _ => ClipboardKind::Copy,
-                        };
-                        let ret = match &tab.location {
-                            Location1::Path(p) => self.update(Message::PasteContents(
-                                p.clone(),
-                                ClipboardPaste {
-                                    kind,
-                                    paths: data.paths,
-                                },
-                            )),
-                            Location1::Trash if matches!(action, DndAction::Move) => {
-                                self.operation(Operation::Delete { paths: data.paths });
-                                Task::none()
-                            }
-                            _ => {
-                                log::warn!("Copy to trash is not supported.");
-                                Task::none()
-                            }
-                        };
-                        return ret;
-                    }
-                } else {
+                    _ = self.update(Message::DndDropTabLeft(entity, data, action));
+                } else if self.config.show_second_panel && drag_id == self.tab_drag_id_right {
                     let entity = self.tab_model2.active();
-                    if let Some((tab, data)) = self.tab_model2.data::<Tab2>(entity).zip(data) {
-                        let kind = match action {
-                            DndAction::Move => ClipboardKind::Cut,
-                            _ => ClipboardKind::Copy,
-                        };
-                        let ret = match &tab.location {
-                            Location2::Path(p) => self.update(Message::PasteContents(
-                                p.clone(),
-                                ClipboardPaste {
-                                    kind,
-                                    paths: data.paths,
-                                },
-                            )),
-                            Location2::Trash if matches!(action, DndAction::Move) => {
-                                self.operation(Operation::Delete { paths: data.paths });
-                                Task::none()
-                            }
-                            _ => {
-                                log::warn!("Copy to trash is not supported.");
-                                Task::none()
-                            }
-                        };
-                        return ret;
-                    }    
+                    _ = self.update(Message::DndDropTabRight(entity, data, action));
+                } else {
+                    if let Some(drop) = data {
+                        if drop.paths.len() > 0 {
+                            let s = osstr_to_string(drop.paths[0].clone().into_os_string());
+                            let _ = self.update(Message::PasteValueTerminal(s));
+                        }    
+                    }
                 }
             }
             Message::DndHoverTabTimeout(entity) => {
@@ -6580,10 +6583,6 @@ impl Application for App {
                 return Task::perform(tokio::time::sleep(HOVER_DURATION2), move |_| {
                     cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
                 });
-            }
-            Message::DndExitPanegrid => {
-                self.tab_dnd_hover_left = None;
-                self.tab_dnd_hover_right = None;
             }
             Message::DndExitTabLeft => {
                 self.tab_dnd_hover_left = None;
@@ -6750,27 +6749,6 @@ impl Application for App {
                     return ret;
                 }
             }
-            Message::DndHoverTabTimeout(entity) => {
-                if self.active_panel == PaneType::LeftPane {
-                    if self
-                        .tab_dnd_hover_left
-                        .as_ref()
-                        .is_some_and(|(e, i)| *e == entity && i.elapsed() >= HOVER_DURATION1)
-                    {
-                        self.tab_dnd_hover_left = None;
-                    }
-                } else {
-                    if self
-                        .tab_dnd_hover_right
-                        .as_ref()
-                        .is_some_and(|(e, i)| *e == entity && i.elapsed() >= HOVER_DURATION2)
-                    {
-                        self.tab_dnd_hover_right = None;
-                    }
-                }
-                return self.update(Message::TabActivate(entity));
-            }
-
             Message::NavBarClose(entity) => {
                 if let Some(data) = self.nav_model.data::<MounterData>(entity) {
                     if let Some(mounter) = MOUNTERS.get(&data.0) {
@@ -7026,7 +7004,18 @@ impl Application for App {
                 _ => {}
             },
             Message::Size(size) => {
+                let mut new_rect = self.pane_model.panestates.window_size.clone();
+                new_rect.width = size.width as f64;
+                new_rect.height = size.height as f64;
+                self.pane_model.panestates.window_size = new_rect;
                 self.size = Some(size);
+                self.handle_overlap();
+            }
+            Message::Move(point) => {
+                let mut new_rect = self.pane_model.panestates.window_size.clone();
+                new_rect.x = point.x as f64;
+                new_rect.y = point.y as f64;
+                self.pane_model.panestates.window_size = new_rect;
                 self.handle_overlap();
             }
         }
@@ -7998,7 +7987,7 @@ impl Application for App {
         //let focus = self.focus;
         //let total_panes = self.panes.len();
 
-        let pane_grid = PaneGrid::new(
+        let mut pane_grid = PaneGrid::new(
             &self.pane_model.panestates,
             |pane, tab_model, _is_maximized| {
                 //let is_focused = focus == Some(id);
@@ -8021,11 +8010,14 @@ impl Application for App {
         .drag_id(self.panegrid_drag_id)
         .on_dnd_enter(|v| Message::DndEnterPanegrid(v))
         .on_dnd_leave(|| Message::DndExitPanegrid)
-        .on_dnd_drop(|data, action| {
-            Message::DndDropPanegrid(data, action)
+        .on_dnd_drop(|drag_id, data, action| {
+            Message::DndDropPanegrid(drag_id, data, action)
         })       
         .on_resize(space_s, Message::PaneResized);
-
+        for p in self.pane_model.panes.iter() {
+            pane_grid.panes.push(p.to_owned());
+            pane_grid.drag_id_by_pane.insert(p.to_owned(), self.pane_model.drag_id_by_pane[p]);
+        }
         widget::container(pane_grid)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -8140,6 +8132,7 @@ impl Application for App {
                     Some(Message::Size(size))
                 }
                 Event::Window(WindowEvent::Resized(s)) => Some(Message::Size(s)),
+                Event::Window(WindowEvent::Moved(p)) => Some(Message::Move(p)),
                 Event::Window(WindowEvent::FileHovered(f)) => Some(Message::DndHoveredWindow(f)),
                 Event::Window(WindowEvent::FilesHoveredLeft) => Some(Message::DndHoveredLeftWindow),
                 Event::Window(WindowEvent::FileDropped(f)) => Some(Message::DndDropWindow(f)),

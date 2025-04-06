@@ -26,10 +26,17 @@
 - drag and drop with Commander as destination does not work for the tabs
 - drag and drop with Commander as destination does not work for the terminal for String data
 
-## implemented features
+## implemented features - additional to COSMIC files
+
+- store open tabs to config and restore on app startup
+- allow configuration of visible panels (Button-row, Terminal, second file panel) and store it in config
+- implement copy and paste from and to the Terminal
 
 ## open features
 
+- drop files into commander panels
+- drop paths / commands into the commander terminal
 - switching tabs changes the directory in the terminal
 - show number and size of files in the current directory for each tab
-  
+- save window size in config and update config on resize of the window
+
