@@ -24,6 +24,22 @@ cargo build --release
 sudo just install
 ```
 
+## Packaging
+
+```sh
+# Clone the project using `git`
+git clone https://github.com/fangornsrealm/commander
+# Change to the directory that was created by `git`
+cd commander
+# Build an optimized version using `cargo`, this may take a while
+just build-release
+# build Debian / Ubuntu package
+just build-deb
+
+# build Redhat / Fedora / Suse package 
+just build-rpm
+```
+
 ## Build the project from source
 
 ```sh
