@@ -11,6 +11,7 @@ use config::Config;
 pub mod config;
 pub mod dialog;
 mod dnd;
+mod commanderpanegrid;
 mod key_bind;
 mod localize;
 mod menu;

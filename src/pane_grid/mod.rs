@@ -59,6 +59,7 @@ mod content;
 mod controls;
 mod direction;
 mod draggable;
+pub mod element;
 mod node;
 mod pane;
 mod split;
@@ -79,7 +80,7 @@ pub use split::Split;
 pub use state::State;
 pub use title_bar::TitleBar;
 
-use crate::app::Message;
+//use crate::app::Message;
 use cosmic::iced::clipboard::dnd::{
     self, DndAction, DndDestinationRectangle, DndEvent, OfferEvent,
 };
@@ -92,11 +93,12 @@ use cosmic::iced::core::renderer;
 use cosmic::iced::core::touch;
 use cosmic::iced::core::widget::tree::{self, Tree};
 use cosmic::iced::core::{
-    self, Background, Border, Clipboard, Color, Element, Layout, Length, Pixels, Point, Rectangle,
+    self, Background, Border, Clipboard, Color, Layout, Length, Pixels, Point, Rectangle,
     Shell, Size, Theme, Vector, Widget,
 };
 use cosmic::iced::widget::container;
-use cosmic::widget::dnd_destination::{self, DragId};
+//use cosmic::widget::dnd_destination::{self, DragId};
+use cosmic::widget::dnd_destination::DragId;
 use cosmic::Theme as CosmicTheme;
 
 const DRAG_DEADBAND_DISTANCE: f32 = 10.0;
@@ -160,7 +162,7 @@ where
     Theme: Catalog,
     Renderer: core::Renderer,
 {
-    contents: Contents<'a, Content<'a, Message, Theme, Renderer>>,
+    pub contents: Contents<'a, Content<'a, Message, Theme, Renderer>>,
     id: cosmic::iced_core::widget::Id,
     width: Length,
     height: Length,
@@ -1092,16 +1094,16 @@ where
 }
 
 impl<'a, Message, Theme, Renderer> From<PaneGrid<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
+    for crate::pane_grid::element::Element<'a, Message, Theme, Renderer>
 where
     Message: 'a,
-    Theme: Catalog + 'a,
-    Renderer: core::Renderer + 'a,
+    Theme: Catalog + crate::pane_grid::Catalog + 'a,
+    Renderer: cosmic::iced_core::Renderer, crate::pane_grid::PaneGrid<'a, Message, Theme, Renderer>: std::convert::From<crate::pane_grid::PaneGrid<'a, Message, Theme>> + 'a,
 {
     fn from(
         pane_grid: PaneGrid<'a, Message, Theme, Renderer>,
-    ) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(pane_grid)
+    ) -> crate::pane_grid::element::Element<'a, Message, Theme, Renderer> {
+        crate::pane_grid::element::Element::new(pane_grid)
     }
 }
 
@@ -1365,7 +1367,7 @@ impl<'a, T> Contents<'a, T> {
         }
     }
 
-    fn is_maximized(&self) -> bool {
+    fn _is_maximized(&self) -> bool {
         matches!(self, Self::Maximized(..))
     }
 }

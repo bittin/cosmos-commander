@@ -36,7 +36,7 @@ use cosmic::{
         segmented_button::{self, Entity},
         vertical_space, DndDestination,
     },
-    Application, ApplicationExt, Apply, Element,
+    Application, ApplicationExt, Element,
 };
 use notify_debouncer_full::{
     new_debouncer,
@@ -84,6 +84,8 @@ use crate::{
         Location as Location2, Tab as Tab2, HOVER_DURATION as HOVER_DURATION2,
     },
 };
+
+type TabModel = segmented_button::Model<segmented_button::SingleSelect>;
 
 #[derive(Clone, Debug)]
 pub enum Mode {
@@ -321,7 +323,7 @@ pub struct Pane {
 }
 
 impl Pane {
-    fn new(id: PaneType) -> Self {
+    fn _new(id: PaneType) -> Self {
         Self {
             id,
             is_pinned: false,
@@ -736,128 +738,6 @@ fn osstr_to_string(osstr: std::ffi::OsString) -> String {
     String::new()
 }
 
-type TabModel = segmented_button::Model<segmented_button::SingleSelect>;
-
-pub struct CommanderPaneGrid {
-    pub panestates: pane_grid::State<TabModel>,
-    pub panes_created: usize,
-    pub focus: pane_grid::Pane,
-    pub panes: Vec<pane_grid::Pane>,
-    pub splits: Vec<pane_grid::Split>,
-    pub drag_id_by_pane: BTreeMap<pane_grid::Pane, DragId>,
-    pub entity_by_pane: BTreeMap<pane_grid::Pane, segmented_button::Entity>,
-    pub entity_by_type: BTreeMap<PaneType, segmented_button::Entity>,
-    pub pane_by_entity: BTreeMap<segmented_button::Entity, pane_grid::Pane>,
-    pub pane_by_type: BTreeMap<PaneType, pane_grid::Pane>,
-    pub type_by_entity: BTreeMap<segmented_button::Entity, PaneType>,
-    pub type_by_pane: BTreeMap<pane_grid::Pane, PaneType>,
-    pub first_pane: pane_grid::Pane,
-    pub drag_pane: Option<pane_grid::Pane>,
-    pub drag_id: Option<DragId>,
-}
-
-impl CommanderPaneGrid {
-    pub fn new(model: TabModel, drag_id: DragId) -> Self {
-        let (panestates, pane) = pane_grid::State::new(model);
-        let mut terminal_ids = HashMap::new();
-        terminal_ids.insert(pane, cosmic::widget::Id::unique());
-        let mut v = Self {
-            panestates,
-            panes_created: 1,
-            focus: pane,
-            panes: vec![pane],
-            splits: Vec::new(),
-            drag_id_by_pane: BTreeMap::new(),
-            entity_by_pane: BTreeMap::new(),
-            entity_by_type: BTreeMap::new(),
-            pane_by_entity: BTreeMap::new(),
-            pane_by_type: BTreeMap::new(),
-            type_by_entity: BTreeMap::new(),
-            type_by_pane: BTreeMap::new(),
-            first_pane: pane,
-            drag_pane: None,
-            drag_id: None,
-        };
-        v.drag_id_by_pane.insert(pane, drag_id);
-        v.pane_by_type.insert(PaneType::LeftPane, pane);
-        v.type_by_pane.insert(pane, PaneType::LeftPane);
-        let entity;
-        if let Some(tab_model) = v.active() {
-            entity = tab_model.active();
-        } else {
-            return v;
-        }
-        v.entity_by_pane.insert(v.focus, entity);
-        v.entity_by_type.insert(PaneType::LeftPane, entity);
-        v.pane_by_entity.insert(entity, v.focus);
-        v.type_by_entity.insert(entity, PaneType::LeftPane);
-
-        v
-    }
-    pub fn active(&self) -> Option<&TabModel> {
-        self.panestates.get(self.focus)
-    }
-    pub fn active_mut(&mut self) -> Option<&mut TabModel> {
-        self.panestates.get_mut(self.focus)
-    }
-
-    pub fn insert(&mut self, pane_type: PaneType, pane: pane_grid::Pane, split: pane_grid::Split, drag_id: DragId) {
-        if let Some(tab_model) = self.active_mut() {
-            let title = match pane_type {
-                PaneType::ButtonPane => "ButtonPane".to_string(),
-                PaneType::TerminalPane => "TerminalPane".to_string(),
-                PaneType::LeftPane => "LeftPane".to_string(),
-                PaneType::RightPane => "RightPane".to_string(),
-            };
-            let entity = tab_model
-                .insert()
-                .text(title)
-                //.closable()
-                //.activate()
-                .id();
-            self.panes.push(pane);
-            self.splits.push(split);
-            self.focus = pane;
-            self.drag_id_by_pane.insert(pane, drag_id);
-            self.pane_by_type.insert(pane_type, pane);
-            self.type_by_pane.insert(pane, pane_type);
-            self.entity_by_pane.insert(pane, entity);
-            self.entity_by_type.insert(pane_type, entity);
-            self.pane_by_entity.insert(entity, pane);
-            self.type_by_entity.insert(entity, pane_type);
-        }
-    }
-
-    pub fn set_focus(&mut self, pane_type: PaneType) {
-        if !self.pane_by_type.contains_key(&pane_type) {
-            return;
-        }
-        let pane = self.pane_by_type[&pane_type];
-        match pane_type {
-            PaneType::ButtonPane => {
-                let pane = self.pane_by_type[&PaneType::LeftPane];
-                self.focus = pane;
-            }
-            PaneType::TerminalPane => self.focus = pane,
-            PaneType::LeftPane => self.focus = pane,
-            PaneType::RightPane => self.focus = pane,
-        };
-    }
-
-    pub fn focussed(&self) -> PaneType {
-        return self.type_by_pane[&self.focus];
-    }
-
-    pub fn drop_target(&self, drag_id: DragId) -> PaneType {
-        for p in self.panes.iter() {
-            if self.drag_id_by_pane[p] == drag_id {
-                return self.type_by_pane[p];
-            }
-        }
-        PaneType::LeftPane
-    }
-}
-
 /// The [`App`] stores application-specific state.
 pub struct App {
     core: Core,
@@ -865,7 +745,7 @@ pub struct App {
     nav_model: segmented_button::SingleSelectModel,
     tab_model1: segmented_button::Model<segmented_button::SingleSelect>,
     tab_model2: segmented_button::Model<segmented_button::SingleSelect>,
-    pane_model: CommanderPaneGrid,
+    pane_model: crate::commanderpanegrid::CommanderPaneGrid,
     term_event_tx_opt:
         Option<mpsc::UnboundedSender<(pane_grid::Pane, Entity, alacritty_terminal::event::Event)>>,
     terminal: Option<Mutex<crate::terminal::Terminal>>,
@@ -1631,14 +1511,17 @@ impl App {
                     segmented_button::ModelBuilder::default().build(),
                 ) {
                     self.pane_model.panestates.resize(sb, 0.75);
-                    self.pane_model.insert(PaneType::TerminalPane, t, st, self.term_drag_id);
-                    self.pane_model.insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
+                    self.pane_model
+                        .insert(PaneType::TerminalPane, t, st, self.term_drag_id);
+                    self.pane_model
+                        .insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
                     if let Some((r, sr)) = self.pane_model.panestates.split(
                         pane_grid::Axis::Vertical,
                         pane,
                         segmented_button::ModelBuilder::default().build(),
                     ) {
-                        self.pane_model.insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
+                        self.pane_model
+                            .insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
                     }
                 }
             }
@@ -1656,8 +1539,10 @@ impl App {
                     segmented_button::ModelBuilder::default().build(),
                 ) {
                     self.pane_model.panestates.resize(sb, 0.75);
-                    self.pane_model.insert(PaneType::TerminalPane, t, st, self.term_drag_id);
-                    self.pane_model.insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
+                    self.pane_model
+                        .insert(PaneType::TerminalPane, t, st, self.term_drag_id);
+                    self.pane_model
+                        .insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
                 }
             }
         } else if !show_button_row && show_embedded_terminal && show_second_panel {
@@ -1667,13 +1552,15 @@ impl App {
                 segmented_button::ModelBuilder::default().build(),
             ) {
                 self.pane_model.panestates.resize(st, 0.75);
-                self.pane_model.insert(PaneType::TerminalPane, t, st, self.term_drag_id);
+                self.pane_model
+                    .insert(PaneType::TerminalPane, t, st, self.term_drag_id);
                 if let Some((r, sr)) = self.pane_model.panestates.split(
                     pane_grid::Axis::Vertical,
                     pane,
                     segmented_button::ModelBuilder::default().build(),
                 ) {
-                    self.pane_model.insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
+                    self.pane_model
+                        .insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
                 }
             }
         } else if show_button_row && !show_embedded_terminal && show_second_panel {
@@ -1683,13 +1570,15 @@ impl App {
                 segmented_button::ModelBuilder::default().build(),
             ) {
                 self.pane_model.panestates.resize(sb, 0.95);
-                self.pane_model.insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
+                self.pane_model
+                    .insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
                 if let Some((r, sr)) = self.pane_model.panestates.split(
                     pane_grid::Axis::Vertical,
                     pane,
                     segmented_button::ModelBuilder::default().build(),
                 ) {
-                    self.pane_model.insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
+                    self.pane_model
+                        .insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
                 }
             }
         } else if !show_button_row && show_embedded_terminal && !show_second_panel {
@@ -1699,7 +1588,8 @@ impl App {
                 segmented_button::ModelBuilder::default().build(),
             ) {
                 self.pane_model.panestates.resize(st, 0.85);
-                self.pane_model.insert(PaneType::TerminalPane, t, st, self.tab_drag_id_right);
+                self.pane_model
+                    .insert(PaneType::TerminalPane, t, st, self.tab_drag_id_right);
             }
         } else if show_button_row && !show_embedded_terminal && !show_second_panel {
             if let Some((b, sb)) = self.pane_model.panestates.split(
@@ -1708,7 +1598,8 @@ impl App {
                 segmented_button::ModelBuilder::default().build(),
             ) {
                 self.pane_model.panestates.resize(sb, 0.95);
-                self.pane_model.insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
+                self.pane_model
+                    .insert(PaneType::ButtonPane, b, sb, self.tab_drag_id_buttons);
             }
         } else if !show_button_row && !show_embedded_terminal && show_second_panel {
             if let Some((r, sr)) = self.pane_model.panestates.split(
@@ -1716,7 +1607,8 @@ impl App {
                 pane,
                 segmented_button::ModelBuilder::default().build(),
             ) {
-                self.pane_model.insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
+                self.pane_model
+                    .insert(PaneType::RightPane, r, sr, self.tab_drag_id_right);
             }
         } else {
             //
@@ -2592,7 +2484,7 @@ impl App {
                             .on_dnd_leave(|_| Message::DndExitTabLeft)
                             .on_dnd_drop(|entity, data, action| {
                                 Message::DndDropTabLeft(entity, data, action)
-                            })
+                            }),
                     )
                     .class(style::Container::Background)
                     .width(Length::Fill)
@@ -2623,7 +2515,7 @@ impl App {
                             .on_dnd_leave(|_| Message::DndExitTabRight)
                             .on_dnd_drop(|entity, data, action| {
                                 Message::DndDropTabRight(entity, data, action)
-                            })
+                            }),
                     )
                     .class(style::Container::Background)
                     .padding([0, space_s]),
@@ -2641,7 +2533,10 @@ impl App {
                     widget::horizontal_space(),
                 ));
             }
-            let p = Pane {id: pane_type, is_pinned: false};
+            let p = Pane {
+                id: pane_type,
+                is_pinned: false,
+            };
             DndDestination::for_data::<crate::dnd::DndDrop>(tab_column, move |data, action| {
                 if let Some(data) = data {
                     if action == DndAction::Move {
@@ -2653,7 +2548,8 @@ impl App {
                 } else {
                     Message::DndPaneDrop(None)
                 }
-            }).into()
+            })
+            .into()
         } else if pane_type == PaneType::ButtonPane {
             let tab_column = widget::row::with_children(vec![
                 widget::button::text(fl!("f2-rename"))
@@ -2742,7 +2638,10 @@ impl App {
                     );
                 }
             }
-            let p = Pane {id: pane_type, is_pinned: false};
+            let p = Pane {
+                id: pane_type,
+                is_pinned: false,
+            };
             DndDestination::for_data::<crate::dnd::DndDrop>(tab_column, move |data, action| {
                 if let Some(data) = data {
                     if action == DndAction::Move {
@@ -2754,7 +2653,8 @@ impl App {
                 } else {
                     Message::DndPaneDrop(None)
                 }
-            }).into()
+            })
+            .into()
         }
     }
 
@@ -2997,7 +2897,10 @@ impl Application for App {
 
         let window_id_opt = core.main_window_id();
         let tab_drag_id_left = DragId::new();
-        let pane_model = CommanderPaneGrid::new(segmented_button::ModelBuilder::default().build(), tab_drag_id_left);
+        let pane_model = crate::commanderpanegrid::CommanderPaneGrid::new(
+            segmented_button::ModelBuilder::default().build(),
+            tab_drag_id_left,
+        );
         //let initial_pane_id= 0;
         //let config = alacritty_terminal::term::Config {..Default::default()};
         let term_event_tx_opt = None;
@@ -6516,17 +6419,17 @@ impl Application for App {
                     self.tab_dnd_hover = Some((entity, Instant::now()));
                     return Task::perform(tokio::time::sleep(HOVER_DURATION1), move |_| {
                         cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
-                    });        
-                } else if self.config.show_second_panel 
-                && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::RightPane] {
+                    });
+                } else if self.config.show_second_panel
+                    && self.pane_model.focus == self.pane_model.pane_by_type[&PaneType::RightPane]
+                {
                     let entity = self.tab_model2.active();
                     self.tab_dnd_hover = Some((entity, Instant::now()));
                     return Task::perform(tokio::time::sleep(HOVER_DURATION2), move |_| {
                         cosmic::app::Message::App(Message::DndHoverTabTimeout(entity))
-                    });        
+                    });
                 } else {
-                   // if it is terminal 
-
+                    // if it is terminal
                 }
             }
             Message::DndExitPanegrid => {
@@ -6557,7 +6460,7 @@ impl Application for App {
                         if drop.paths.len() > 0 {
                             let s = osstr_to_string(drop.paths[0].clone().into_os_string());
                             let _ = self.update(Message::PasteValueTerminal(s));
-                        }    
+                        }
                     }
                 }
             }
@@ -7984,9 +7887,6 @@ impl Application for App {
             space_xxs, space_s, ..
         } = theme::active().cosmic().spacing;
 
-        //let focus = self.focus;
-        //let total_panes = self.panes.len();
-
         let mut pane_grid = PaneGrid::new(
             &self.pane_model.panestates,
             |pane, tab_model, _is_maximized| {
@@ -8010,15 +7910,17 @@ impl Application for App {
         .drag_id(self.panegrid_drag_id)
         .on_dnd_enter(|v| Message::DndEnterPanegrid(v))
         .on_dnd_leave(|| Message::DndExitPanegrid)
-        .on_dnd_drop(|drag_id, data, action| {
-            Message::DndDropPanegrid(drag_id, data, action)
-        })       
+        .on_dnd_drop(|drag_id, data, action| Message::DndDropPanegrid(drag_id, data, action))
         .on_resize(space_s, Message::PaneResized);
         for p in self.pane_model.panes.iter() {
             pane_grid.panes.push(p.to_owned());
-            pane_grid.drag_id_by_pane.insert(p.to_owned(), self.pane_model.drag_id_by_pane[p]);
+            pane_grid
+                .drag_id_by_pane
+                .insert(p.to_owned(), self.pane_model.drag_id_by_pane[p]);
         }
-        widget::container(pane_grid)
+        let commander_pane_grid =
+            crate::commanderpanegrid::CommanderDndDestination::new(pane_grid, Vec::new());
+        widget::container(commander_pane_grid)
             .width(Length::Fill)
             .height(Length::Fill)
             .padding(space_xxs)
