@@ -56,3 +56,5 @@ cargo run --release
 ## License
 
 This project is licensed under [GPLv3](LICENSE)
+
+Parts coming from the Iced project and are just modified are specially marked sand use the MIT license [MIT](http://opensource.org/licenses/MIT)
