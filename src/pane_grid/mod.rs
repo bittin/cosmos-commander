@@ -59,7 +59,6 @@ mod content;
 mod controls;
 mod direction;
 mod draggable;
-pub mod element;
 mod node;
 mod pane;
 mod split;
