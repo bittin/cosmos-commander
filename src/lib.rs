@@ -1,6 +1,6 @@
 // Copyright 2023 System76 <info@system76.com>
 // SPDX-License-Identifier: GPL-3.0-only
-
+ 
 use cosmic::{app::Settings, iced::Limits};
 use std::{env, fs, path::PathBuf, process};
 
@@ -8,8 +8,10 @@ use app::{App, Flags};
 pub mod app;
 pub mod clipboard;
 use config::Config;
+mod commanderpanegrid;
 pub mod config;
 pub mod dialog;
+pub mod dnd;
 mod key_bind;
 mod localize;
 mod menu;
@@ -19,6 +21,7 @@ mod mounter;
 mod mouse_area;
 mod mouse_reporter;
 pub mod operation;
+mod pane_grid;
 mod spawn_detached;
 use tab1::Location;
 pub mod tab1;

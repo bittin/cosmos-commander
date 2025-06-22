@@ -18,7 +18,7 @@ use alacritty_terminal::{
 use cosmic::{
     iced::advanced::graphics::text::font_system,
     iced::mouse::ScrollDelta,
-    widget::{pane_grid, segmented_button},
+    widget::{segmented_button},
 };
 use cosmic_text::{
     Attrs, AttrsList, Buffer, BufferLine, CacheKeyFlags, Family, LineEnding, Metrics, Shaping,
@@ -40,6 +40,7 @@ use indexmap::IndexSet;
 pub use alacritty_terminal::grid::Scroll as TerminalScroll;
 
 use crate::mouse_reporter::MouseReporter;
+use crate::pane_grid;
 
 /// Minimum contrast between a fixed cursor color and the cell's background.
 /// Duplicated from alacritty
@@ -80,7 +81,7 @@ impl From<Size> for WindowSize {
 
 #[derive(Clone)]
 pub struct EventProxy(
-    pane_grid::Pane,
+    crate::pane_grid::Pane,
     segmented_button::Entity,
     mpsc::UnboundedSender<(pane_grid::Pane, segmented_button::Entity, Event)>,
 );
@@ -188,7 +189,7 @@ pub struct Terminal {
 impl Terminal {
     //TODO: error handling
     pub fn new(
-        pane: pane_grid::Pane,
+        pane: crate::pane_grid::Pane,
         entity: segmented_button::Entity,
         event_tx: mpsc::UnboundedSender<(pane_grid::Pane, segmented_button::Entity, Event)>,
         config: Config,
